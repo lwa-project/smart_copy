@@ -481,7 +481,7 @@ def main(args):
 	signal.signal(signal.SIGTERM, HandleSignalExit)
 	
 	# Restore the saved queue
-	if config['restore']:
+	if opts['restore']:
 		while lwaSC.currentState['status'] != 'NORMAL':
 			time.sleep(5)
 		lwaSC.loadQueuesFromFile('inProgress.queue')
