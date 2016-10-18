@@ -49,7 +49,7 @@ class SmartCopy(object):
 		
 		# SmartCopy system state
 		self.currentState = {}
-		self.currentState['status'] = 'BOOTING'
+		self.currentState['status'] = 'SHUTDWN'
 		self.currentState['info'] = 'Need to INI SC'
 		self.currentState['lastLog'] = 'Welcome to DP SC %s, version %s' % (self.serialNumber, self.version)
 		
@@ -532,3 +532,50 @@ class SmartCopy(object):
 				self.currentState['drThreads'][dr].pause()
 				
 			return True
+			
+	def loadQueuesFromFile(self, filename):
+		"""
+		Restore the copy queue from a file created by saveQueuesToFile().
+		"""
+		
+		# Make sure we are in a safe state to add things
+		if self.currentState['status'] != 'NORMAL':
+			return False
+			
+		# Load the data
+		fh = open(filename)
+		for line in fh:
+			line = line.rstrip()
+			try:
+				dr, host, hostpath, dest, destpath = line.split(';;;', 4)
+			except Exception as e:
+				smartFunctionsLogger.debug("Error parsing queue file line '%s': %s", line, str(e))
+				
+			status, value = self.addCopyCommand(dr, host, hostpath, dest, destpath)
+			if not status:
+				smartFunctionsLogger.warning("Error queue saved copy: %s", str(value))
+				
+		# Done
+		return True
+		
+	def saveQueuesToFile(self, filename, force=False):
+		"""
+		Save the copy queues to a file to help ensure continuity across restarts.
+		"""
+		
+		# Make sure we are in a safe state to save things
+		if self.currentState['status'] != 'SHUTDWN':
+			return False
+			
+		# Make sure we aren't overwriting anything (unless we should)
+		if not force:
+			if os.path.exists(filename):
+				return False
+				
+		fh = open(filename, 'w')
+		for dr in self.currentState['drThreads']:
+			for host,hostpath,dest,destpath,id in self.currentState['drThreads'][dr]:
+				fh.write('%s;;;%s;;;%s;;;%s;;;%s\n' % (dr, host, hostpath, dest, destpath))
+		fh.close()
+		
+		return True
