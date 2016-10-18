@@ -541,6 +541,8 @@ class SmartCopy(object):
 		# Make sure we are in a safe state to add things
 		if self.currentState['status'] != 'NORMAL':
 			return False
+		if not os.path.exists(filename):
+			return False
 			
 		# Load the data
 		fh = open(filename)
