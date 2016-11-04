@@ -360,19 +360,26 @@ class ReferenceServer(object):
 			
 			self.logger.info('Stopped the reference number server')
 			
-	def _generator(self):
+	def _generator(self, timeout=10):
 		i = 1
 		
 		context = zmq.Context()
 		socket = context.socket(zmq.REP)
 		socket.bind("tcp://*:%i" % self.port)
 		
+		poller = zmq.Poller()
+		poller.register(socket, zmq.POLLIN)
+		
 		while self.alive.isSet:
-			message = socket.recv()
-			if message == b'next_ref':
-				socket.send(b"%i" % i)
-				i += 1
-				
+			message = dict(poller.poll(timeout*1000))
+			if message:
+				if message.get(socket) == zmq.POLLIN:
+					message = socket.recv(zmq.NOBLOCK)
+					if message == b'next_ref':
+						socket.send(b"%i" % i)
+						i += 1
+						
+		poller.unregister(socket)
 		socket.close()
 		context.term()
 		

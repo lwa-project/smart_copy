@@ -576,8 +576,13 @@ class SmartCopy(object):
 				
 		fh = open(filename, 'w')
 		for dr in self.currentState['drThreads']:
-			for host,hostpath,dest,destpath,id in self.currentState['drThreads'][dr]:
+			task =  self.currentState['drThreads'][dr].queue.get(False, 1)
+			while task is not None:
+				host,hostpath,dest,destpath,id = task
 				fh.write('%s;;;%s;;;%s;;;%s;;;%s\n' % (dr, host, hostpath, dest, destpath))
+				self.currentState['drThreads'][dr].queue.task_done()
+				
+				task =  self.currentState['drThreads'][dr].queue.get(False, 1)
 		fh.close()
 		
 		return True
