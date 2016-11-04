@@ -345,6 +345,10 @@ class ManageDR(object):
 								### of the queue and skip to the next iteration
 								if task[0] != task[2]:
 									if not rcl.acquire(False):
+										## Let the queue know that we've done something with it
+										self.queue.task_done()
+										
+										## Add it back in for later
 										self.queue.put(task)
 										time.sleep(5)
 										continue
@@ -353,6 +357,9 @@ class ManageDR(object):
 								### Start it up.
 								self.active = InterruptibleCopy(*task)
 								self.results[self.active.id] = 'active/started for %s:%s -> %s:%s' % (task[0], task[1], task[2], task[3])
+								
+								### Let the queue know that we've done something with it
+								self.queue.task_done()
 								
 					except Queue.Empty:
 						self.active = None
