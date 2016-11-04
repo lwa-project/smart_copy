@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import time
+import Queue
 import shutil
 import struct
 import logging
@@ -576,13 +577,17 @@ class SmartCopy(object):
 				
 		fh = open(filename, 'w')
 		for dr in self.currentState['drThreads']:
-			task =  self.currentState['drThreads'][dr].queue.get(False, 1)
-			while task is not None:
-				host,hostpath,dest,destpath,id = task
-				fh.write('%s;;;%s;;;%s;;;%s;;;%s\n' % (dr, host, hostpath, dest, destpath))
-				self.currentState['drThreads'][dr].queue.task_done()
-				
-				task =  self.currentState['drThreads'][dr].queue.get(False, 1)
+			while True:
+				try:
+					task =  self.currentState['drThreads'][dr].queue.get(False, 1)
+					if task is not None:
+						host,hostpath,dest,destpath,id = task
+						fh.write('%s;;;%s;;;%s;;;%s;;;%s\n' % (dr, host, hostpath, dest, destpath))
+					self.currentState['drThreads'][dr].queue.task_done()
+					
+				except Queue.Empty:
+					break
+					
 		fh.close()
 		
 		return True
