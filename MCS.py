@@ -370,7 +370,7 @@ class ReferenceServer(object):
 		poller = zmq.Poller()
 		poller.register(socket, zmq.POLLIN)
 		
-		while self.alive.isSet:
+		while self.alive.isSet():
 			message = dict(poller.poll(timeout*1000))
 			if message:
 				if message.get(socket) == zmq.POLLIN:
