@@ -6,7 +6,6 @@ import sys
 import time
 import uuid
 import select
-import signal
 import threading
 import traceback
 import subprocess
@@ -20,7 +19,7 @@ from collections import OrderedDict
 
 __version__ = '0.1'
 __revision__ = '$Rev$'
-__all__ = ['SerialNumber', 'LimitedSizeDict', 'TimeoutError', 'Timeout', 'InterruptibleCopy', '__version__', '__revision__', '__all__']
+__all__ = ['SerialNumber', 'LimitedSizeDict', 'InterruptibleCopy', '__version__', '__revision__', '__all__']
 
 
 smartCommonLogger = logging.getLogger('__main__')
@@ -70,37 +69,6 @@ class LimitedSizeDict(OrderedDict):
 		if self.size_limit is not None:
 			while len(self) > self.size_limit:
 				self.popitem(last=False)
-
-
-class TimeoutError(Exception):
-	"""
-	Dummy TimeoutError class for use with Timeout instances.
-	"""
-	
-	pass
-
-
-class Timeout(object):
-	"""
-	From:
-		https://stackoverflow.com/questions/2281850/timeout-function-if-it-takes-too-long-to-finish
-	"""
-	
-	def __init__(self, seconds=1, error_message='Timeout', raise_error=True):
-		self.seconds = seconds
-		self.error_message = error_message
-		self.raise_error = raise_error
-		
-	def handle_timeout(self, signum, frame):
-		if self.raise_error:
-			raise TimeoutError(self.error_message)
-			
-	def __enter__(self):
-		signal.signal(signal.SIGALRM, self.handle_timeout)
-		signal.alarm(self.seconds)
-		
-	def __exit__(self, type, value, traceback):
-		signal.alarm(0)
 
 
 class InterruptibleCopy(object):
@@ -314,6 +282,8 @@ class InterruptibleCopy(object):
 		
 		# Start up the process and start looking at the stdout
 		self.process = subprocess.Popen(cmd, bufsize=1, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
+		watchOut = select.poll()
+		watchOut.register(self.process.stdout)
 		smartCommonLogger.debug('Launched \'%s\' with PID %i', ' '.join(cmd), self.process.pid)
 		
 		# Read from stdout while the copy is running so we can get 
@@ -321,12 +291,13 @@ class InterruptibleCopy(object):
 		while True:
 			## Is there something to read?
 			stdout = ''
-			while True:
-				try:
-					with Timeout(seconds=5):
+			while watchOut.poll(1):
+				if self.process.poll() is None:
+					try:
 						stdout += self.process.stdout.read(1)
-						
-				except TimeoutError:
+					except ValueError:
+						break
+				else:
 					break
 					
 			## Did we read something?  If not, sleep

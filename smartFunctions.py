@@ -577,6 +577,16 @@ class SmartCopy(object):
 				
 		fh = open(filename, 'w')
 		for dr in self.currentState['drThreads']:
+			## Active
+			try:
+				act = self.currentState['drThreads'][dr].active
+				host,hostpath,dest,destpath,id = act.host,act.hostpath,act.dest,act.destpath,act.id
+				fh.write('%s;;;%s;;;%s;;;%s;;;%s\n' % (dr, host, hostpath, dest, destpath))
+				
+			except AttributeError:
+				pass
+				
+			## Queued
 			while True:
 				try:
 					task =  self.currentState['drThreads'][dr].queue.get(False, 1)
