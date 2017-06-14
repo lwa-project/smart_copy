@@ -24,6 +24,7 @@ Usage: smartCopyHelper.py metadata [metadata [...]] ucfName
 Options:
 -h, --help        Display this help information
 -v, --version     Display version information
+-m, --metadata    Include the metadata with the copy
 -q, --query       Query the smart copy server
 
 Note:
@@ -56,12 +57,13 @@ def parseOptions(args):
 	config = {}
 	# Default parameters
 	config['version'] = False
+	config['metadata'] = False
 	config['query'] = False
 	config['args'] = []
 	
 	# Read in and process the command line flags
 	try:
-		opts, args = getopt.getopt(args, "hvq", ["help", "version", "query"])
+		opts, args = getopt.getopt(args, "hvmq", ["help", "version", "metadata", "query"])
 	except getopt.GetoptError, err:
 		# Print help information and exit:
 		print str(err) # will print something like "option -a not recognized"
@@ -73,6 +75,8 @@ def parseOptions(args):
 			usage(exitCode=0)
 		elif opt in ('-v', '--version'):
 			config['version'] = True
+		elif opt in ('-m', '--metadata'):
+			config['metadata'] = True
 		elif opt in ('-q', '--query'):
 			config['query'] = True
 		else:
@@ -260,15 +264,19 @@ def main(args):
 			# Process the input files
 			for filename in filenames:
 				## Parse the metadata
-				filetag, barcode, beam, date, isSpec = parseMetadata(filename)
-				
+				try:
+					filetag, barcode, beam, date, isSpec = parseMetadata(filename)
+				except KeyError:
+					print "WARNING: could not parse '%s', skipping" % os.path.basename(filename)
+					continue
+					
 				## Get the path on the DR
 				drPath = getDRSUPath(beam, barcode)
 				
 				## Make the copy
 				if drPath is None:
 					### Problem
-					print "WARNING: could not find path for DRSU '%s' on DR%i'" % (barcode, beam)
+					print "WARNING: could not find path for DRSU '%s' on DR%i, skipping" % (barcode, beam)
 				else:
 					### Everything is ok
 					inHost = "DR%i" % beam
@@ -294,6 +302,21 @@ def main(args):
 					infs.append( "Queuing copy for %s:%s to %s:%s" % (host, hostpath, dest, destpath) )
 					cmds.append( buildPayload(inHost, "SCP", data="%s:%s->%s:%s" % (host, hostpath, dest, destpath), refSocket=sockRef) )
 					
+					if config['metadata']:
+						mtdPath = os.path.abspath(filename)
+						destPath = "%s:/data/network/recent_data/%s" % ('lwaucf1', destUser)
+						
+						try:
+							dest ,destpath = destPath.split(':', 1)
+						except ValueError:
+							dest, destpath = '', destPath
+						if dest == '':
+							dest = 'lwaucf1'
+							destpath = os.path.abspath(destpath)
+							
+						infs.append( "Copying metadata %s to %s:%s" % (filename, dest, destpath) )
+						cmds.append( ["scp", mtdPath, "mcsdr@%s:%s" % (dest, destpath)] )
+						
 		try:
 			sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 			sockOut.settimeout(5)
@@ -304,18 +327,28 @@ def main(args):
 			for inf,cmd in zip(infs,cmds):
 				print inf
 				
-				sockOut.sendto(cmd, (outHost, outPort))
-				data, address = sockIn.recvfrom(MCS_RCV_BYTES)
-				
-				cStatus, sStatus, info = parsePayload(data)
-				info = info.split('\n')
-				if len(info) == 1:
-					print cStatus, sStatus, info[0]
+				if inf[:4] != 'Copy':
+					## Standard SmartCopy commands
+					sockOut.sendto(cmd, (outHost, outPort))
+					data, address = sockIn.recvfrom(MCS_RCV_BYTES)
+					
+					cStatus, sStatus, info = parsePayload(data)
+					info = info.split('\n')
+					if len(info) == 1:
+						print cStatus, sStatus, info[0]
+					else:
+						print cStatus, sStatus
+						for line in info:
+							print "  %s" % line
+							
 				else:
-					print cStatus, sStatus
-					for line in info:
-						print "  %s" % line
-						
+					## Custom metadata scp command
+					try:
+						output = subprocess.check_output(cmd)
+						print "  Done"
+					except subprocess.CalledProcessError:
+						print "  WARNING: failed to copy metadata, skipping"
+					
 			sockIn.close()
 			sockOut.close()
 		except socket.error as e:
