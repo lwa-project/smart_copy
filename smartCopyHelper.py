@@ -19,7 +19,7 @@ from lsl.common import mcs, metabundle
 def usage(exitCode=None):
 	print """smartCopyHelper.py - Parse a metadata file and queue the data copy for later
 
-Usage: smartCopyHelper.py metadata [metadata [...]] ucfName
+Usage: smartCopyHelper.py [OPTIONS] metadata [metadata [...]] ucfName
 
 Options:
 -h, --help        Display this help information
@@ -261,6 +261,12 @@ def main(args):
 			filenames = config['args'][:-1]
 			destUser = config['args'][-1]
 			
+			# Validate the UCF username
+			try:
+				output = subprocess.check_output(['ssh', 'mcsdr@lwaucf1', 'ls /data/network/recent_data/%s' % destUser])
+			except subprocess.CalledProcessError:
+				raise RuntimeError("Invalid UCF username: %s" % destUser)
+				
 			# Process the input files
 			for filename in filenames:
 				## Parse the metadata
