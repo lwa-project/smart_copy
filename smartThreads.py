@@ -308,7 +308,8 @@ class ManageDR(object):
 		return True, 0
 		
 	def processQueue(self):
-		tLastPurge = time.time()
+		# Purges run late in the day (18:00 UTC)
+		tLastPurge = (int(time.time())/86400)*86400 + 18*3600
 		
 		while self.alive.isSet():
 			tStart = time.time()
@@ -360,7 +361,7 @@ class ManageDR(object):
 							
 				if readyToProcess:
 					# Try to clean things up on the DR
-					if time.time() - tLastPurge > 14400:
+					if time.time() - tLastPurge > 86400:
 						self.purgeCompleted()
 						tLastPurge = time.time()
 						
