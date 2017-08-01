@@ -227,7 +227,11 @@ def main(args):
 	
 	# Connect to the smart copy command server
 	zeroconf = Zeroconf()
+	tPoll = time.time()
 	zinfo = zeroconf.get_service_info("_sccs._udp.local.", "Smart copy server._sccs._udp.local.")
+	while time.time() - tPoll <= 10.0 and zinfo is None:
+		time.sleep(1)
+		zinfo = zeroconf.get_service_info("_sccs._udp.local.", "Smart copy server._sccs._udp.local.")
 	if zinfo is None:
 		raise RuntimeError("Cannot find the smart copy command server")
 		
@@ -265,7 +269,7 @@ def main(args):
 			try:
 				output = subprocess.check_output(['ssh', 'mcsdr@lwaucf1', 'ls /data/network/recent_data/%s' % destUser])
 			except subprocess.CalledProcessError:
-				raise RuntimeError("Invalid UCF username: %s" % destUser)
+				raise RuntimeError("Invalid UCF username/path: %s" % destUser)
 				
 			# Process the input files
 			for filename in filenames:

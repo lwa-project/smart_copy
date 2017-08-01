@@ -308,6 +308,7 @@ class ManageDR(object):
 		return True, 0
 		
 	def processQueue(self):
+		tLastPurge = time.time()
 		
 		while self.alive.isSet():
 			tStart = time.time()
@@ -327,13 +328,31 @@ class ManageDR(object):
 					else:
 						### Yes, save the output
 						self.results[self.active.id] = self.active.status
+						### Was it a successful copy?
+						if self.active.isSuccessful():
+							## Yes, save it to the 'completed' log
+							fsize = self.active.getFileSize()
+							fh = open('completed_%s.log' % self.dr, 'a')
+							fh.write('%s %s\n' % (fsize, self.active.hostpath))
+							fh.close()
+						elif self.active.isFailed():
+							## No, save it to the 'error' log
+							fsize = self.active.getFileSize()
+							fh = open('error_%s.log' % self.dr, 'a')
+							fh.write('%s %s\n' % (fsize, self.active.hostpath))
+							fh.close()
 						### Check to see if this was a remote copy.  If so, 
 						### we need to release the lock
 						if self.active.isRemote():
 							rcl.release()
 							
 				if readyToProcess:
-					# It looks like we can try to start another item in the queu running
+					# Try to clean things up on the DR
+					if time.time() - tLastPurge > 14400:
+						self.purgeCompleted()
+						tLastPurge = time.time()
+						
+					# It looks like we can try to start another item in the queue running
 					try:
 						## Pull out the next task
 						task = self.queue.get(False, 5)
@@ -495,4 +514,63 @@ class ManageDR(object):
 			return True, self.active.getTimeRemaining()
 		else:
 			return True, 'None'
+			
+	def purgeCompleted(self):
+		"""
+		Purge completed transfers.
+		"""
+		
+		# Get the name of the logfile to check
+		logname = 'completed_%s.log' % self.dr
+		
+		# Get how many lines are in the logfile
+		try:
+			output = subprocess.check_output(['awk', "'{print $1}'", logname])
+			totalSize = sum([int(v, 10) for v in output.split('\n')[:-1]])
+		except subprocess.CalledProcessError:
+			totalSize = 0
+			
+		# If we have at least 1 TB of files to cleanup, run the cleanup.  Otherwise, wait.
+		if totalSize >= 1024**4:
+			## Run the cleanup
+			### Load the files to purge
+			fh = open(logname, 'r')
+			lines = fh.read()
+			fh.close()
+			### Zero out the purge list
+			os.unlink(logname)
+			
+			### Purge the files, keeping track of what we can't do and what has failed
+			entries = lines.split('\n')[:-1]
+			retry, failed = [], []
+			for entry in entries:
+				fsize, filename = entry.split(None, 1)
+				try:
+					if filename.find('DROS/Spec') != -1:
+						smartThreadsLogger.info('Skipped %s:%s of size %s', self.dr, filename, fsize)
+						continue
+						
+					assert(not self.inhibit)
+					subprocess.check_output(['ssh', 'mcsdr@%s' % self.dr, 'rm -f %s' % filename])
+					smartThreadsLogger.info('Removed %s:%s of size %s', self.dr, filename, fsize)
+				except AssertionError:
+					retry.append( (fsize, filename) )
+				except subprocess.CalledProcessError:
+					failed.append( (fsize, filename) )
+					smartThreadsLogger.warning('Failed to remove %s:%s of size %s', self.dr, filename, fsize)
+					
+			### If there are files that we were unable to transfer, save them for later
+			if len(retry) > 0:
+				fh = open(logfile, 'w')
+				for fsize,filename in retry:
+					fh.write('%s %s\n' % (fsize, filename))
+				fh.close()
+				
+				return False
+				
+			return True
+			
+		else:
+			## Skip the cleanup
+			return False
 			

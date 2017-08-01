@@ -105,6 +105,28 @@ class InterruptibleCopy(object):
 		
 		return self.status
 		
+	def getFileSize(self):
+		"""
+		Return the filesize to be copied in bytes.
+		"""
+		
+		try:
+			return self._size
+		except AttributeError:
+			if self.host == '':
+				cmd = ['du', '-b', self.hostpath]
+			else:
+				cmd = ["ssh", "-t", "-t", "mcsdr@%s" % self.host.lower()]
+				cmd.append('du -b %s' % self.hostpath)
+				
+			try:
+				output = subprocess.check_output(cmd)
+				self._size = output.split(None, 1)[0]
+			except subprocess.CalledProcessError:
+				self._size = '0'
+				
+			return self._size
+			
 	def getBytesTransferred(self):
 		"""
 		Return the number of bytes transferred.
@@ -194,6 +216,30 @@ class InterruptibleCopy(object):
 		if self.isRunning():
 			return False
 		elif self.status[:6] != 'paused':
+			return True
+		else:
+			return False
+			
+	def isSuccessful(self):
+		"""
+		Return a Boolean of whether or not the copy was successful.
+		"""
+		
+		if not self.isComplete():
+			return False
+		elif self.status[:8] == 'complete':
+			return True
+		else:
+			return False
+			
+	def isFailed(self):
+		"""
+		Return a Boolean of whether or not the copy failed.
+		"""
+		
+		if not self.isComplete():
+			return False
+		elif self.status[:5] == 'error':
 			return True
 		else:
 			return False
