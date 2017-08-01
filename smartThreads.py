@@ -331,10 +331,22 @@ class ManageDR(object):
 						### Was it a successful copy?
 						if self.active.isSuccessful():
 							## Yes, save it to the 'completed' log
-							fsize = self.active.getFileSize()
-							fh = open('completed_%s.log' % self.dr, 'a')
-							fh.write('%s %s\n' % (fsize, self.active.hostpath))
-							fh.close()
+							#### Ok, this is a little strange.  We only want to allow spectrometer files 
+							#### that have been copied to a remove destination (leo) to be queued for 
+							#### deletion.  This way we don't have a 'hole' in our archive where data
+							#### gets copied to the cluster, deleted, and never makes it to the archive.
+							if self.active.hostpath.find('DROS/Spec') != -1:
+								if self.active.isRemote():
+									if self.active.dest.find('leo10g.unm.edu') != -1:
+										fsize = self.active.getFileSize()
+										fh = open('completed_%s.log' % self.dr, 'a')
+										fh.write('%s %s\n' % (fsize, self.active.hostpath))
+										fh.close()
+							else:
+								fsize = self.active.getFileSize()
+								fh = open('completed_%s.log' % self.dr, 'a')
+								fh.write('%s %s\n' % (fsize, self.active.hostpath))
+								fh.close()
 						elif self.active.isFailed():
 							## No, save it to the 'error' log
 							fsize = self.active.getFileSize()
@@ -546,10 +558,6 @@ class ManageDR(object):
 			for entry in entries:
 				fsize, filename = entry.split(None, 1)
 				try:
-					if filename.find('DROS/Spec') != -1:
-						smartThreadsLogger.info('Skipped %s:%s of size %s', self.dr, filename, fsize)
-						continue
-						
 					assert(not self.inhibit)
 					subprocess.check_output(['ssh', 'mcsdr@%s' % self.dr, 'rm -f %s' % filename])
 					smartThreadsLogger.info('Removed %s:%s of size %s', self.dr, filename, fsize)
