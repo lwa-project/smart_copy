@@ -134,7 +134,7 @@ class InterruptibleCopy(object):
 		
 		mtch = self._rsyncRE.search(self.stdout)
 		if mtch is not None:
-			trans = mtch.gr('transferred')
+			trans = mtch.group('transferred')
 		else:
 			trans = "0"
 			

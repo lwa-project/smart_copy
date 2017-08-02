@@ -455,7 +455,7 @@ class ManageDR(object):
 		Return the size of the copy queue.
 		"""
 		
-		return True, self.queue.qsize()
+		return True, self.queue.qsize() + (1 if self.active is not None else 0)
 		
 	def getQueueState(self):
 		"""
@@ -538,13 +538,14 @@ class ManageDR(object):
 		
 		# Get how many lines are in the logfile
 		try:
-			output = subprocess.check_output(['awk', "'{print $1}'", logname])
-			totalSize = sum([int(v, 10) for v in output.split('\n')[:-1]])
+			totalSize = int(subprocess.check_output(['awk', "{sum+=$1} END {print sum}", logname]), 10)
 		except subprocess.CalledProcessError:
 			totalSize = 0
 			
 		# If we have at least 1 TB of files to cleanup, run the cleanup.  Otherwise, wait.
 		if totalSize >= 1024**4:
+			smartThreadsLogger.info("Attempting to purge %.1f TB from %s", totalSize/1024.0**4, self.dr)
+			
 			## Run the cleanup
 			### Load the files to purge
 			fh = open(logname, 'r')
@@ -560,17 +561,18 @@ class ManageDR(object):
 				fsize, filename = entry.split(None, 1)
 				try:
 					assert(not self.inhibit)
-					subprocess.check_output(['ssh', 'mcsdr@%s' % self.dr, 'rm -f %s' % filename])
+					subprocess.check_output(['ssh', 'mcsdr@%s' % self.dr, 'sudo rm -f %s' % filename])
 					smartThreadsLogger.info('Removed %s:%s of size %s', self.dr, filename, fsize)
 				except AssertionError:
 					retry.append( (fsize, filename) )
-				except subprocess.CalledProcessError:
+				except subprocess.CalledProcessError as e:
 					failed.append( (fsize, filename) )
 					smartThreadsLogger.warning('Failed to remove %s:%s of size %s', self.dr, filename, fsize)
+					smartThreadsLogger.debug('%s', str(e))
 					
 			### If there are files that we were unable to transfer, save them for later
 			if len(retry) > 0:
-				fh = open(logfile, 'w')
+				fh = open(logname, 'w')
 				for fsize,filename in retry:
 					fh.write('%s %s\n' % (fsize, filename))
 				fh.close()

@@ -472,6 +472,9 @@ def main(args):
 		
 		MCSInstance.stop()
 		
+		# Save the residual queues to a file
+		MCSInstance.SubSystemInstance.saveQueuesToFile('inProgress.queue', force=True)
+		
 		# Exit
 		logger.info('Finished')
 		logging.shutdown()

@@ -32,7 +32,7 @@ Note:
     OBSSTATUS_DR# - whether or not DR# is recording data
     
     QUEUE_SIZE_DR# - size of the copy queue on DR#
-    QUEUE_STATUS_DR# - status of the copy queu on DR#
+    QUEUE_STATUS_DR# - status of the copy queue on DR#
     QUEUE_ENTRY_# - details of a copy command entry
     
     ACTIVE_ID_DR# - active copy command queue ID on DR#

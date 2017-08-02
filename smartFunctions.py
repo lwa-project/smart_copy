@@ -580,21 +580,22 @@ class SmartCopy(object):
 			## Active
 			try:
 				act = self.currentState['drThreads'][dr].active
-				host,hostpath,dest,destpath,id = act.host,act.hostpath,act.dest,act.destpath,act.id
-				fh.write('%s;;;%s;;;%s;;;%s;;;%s\n' % (dr, host, hostpath, dest, destpath))
-				
+				if act is not None:
+					host,hostpath,dest,destpath,id = act.host,act.hostpath,act.dest,act.destpath,act.id
+					fh.write('%s;;;%s;;;%s;;;%s;;;%s\n' % (dr, host, hostpath, dest, destpath))
+					
 			except AttributeError:
 				pass
 				
 			## Queued
 			while True:
 				try:
-					task =  self.currentState['drThreads'][dr].queue.get(False, 1)
+					task =  self.currentState['drThreads'][dr].queue.get(False, 5)
 					if task is not None:
 						host,hostpath,dest,destpath,id = task
 						fh.write('%s;;;%s;;;%s;;;%s;;;%s\n' % (dr, host, hostpath, dest, destpath))
-					self.currentState['drThreads'][dr].queue.task_done()
-					
+						self.currentState['drThreads'][dr].queue.task_done()
+						
 				except Queue.Empty:
 					break
 					
