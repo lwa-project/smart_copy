@@ -325,7 +325,7 @@ def main(args):
 							destpath = os.path.abspath(destpath)
 							
 						infs.append( "Copying metadata %s to %s:%s" % (filename, dest, destpath) )
-						cmds.append( ["scp", mtdPath, "mcsdr@%s:%s" % (dest, destpath)] )
+						cmds.append( ["rsync", "-e ssh", "-avH", mtdPath, "mcsdr@%s:%s" % (dest, destpath)] )
 						
 		try:
 			sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
