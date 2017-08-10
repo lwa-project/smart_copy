@@ -16,6 +16,9 @@ from zeroconf import Zeroconf
 from lsl.common import mcs, metabundle
 
 
+DEFAULT_PATH = '/data2/from_lwa1/'
+
+
 def usage(exitCode=None):
 	print """smartCopyLeo.py - Parse a metadata file and queue the data copy for later
 
@@ -57,6 +60,7 @@ def parseOptions(args):
 	config = {}
 	# Default parameters
 	config['version'] = False
+	config['path'] = DEFAULT_PATH
 	config['force'] = False
 	config['query'] = False
 	config['args'] = []
@@ -263,7 +267,7 @@ def main(args):
 			
 		else:
 			filenames = config['args']
-			destPath = 'mcsdr@leo10g.unm.edu:/data2/fromsite/'
+			destPath = 'mcsdr@leo10g.unm.edu:%s' % config['path']
 			
 			# Process the input files
 			for filename in filenames:
