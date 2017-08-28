@@ -14,6 +14,11 @@ from datetime import datetime
 from zeroconf import Zeroconf
 
 from lsl.common import mcs, metabundle
+try:
+	from lsl.commmon import metabundleADP
+	adpReady = True
+except ImportError:
+	adpReady = False
 
 
 SITE = socket.gethostname().split('-', 1)[0]
@@ -111,16 +116,25 @@ def parseMetadata(tarname):
 	  * if the data is spectrometer or not
 	"""
 	
-	project = metabundle.getSessionDefinition(tarname)
+	try:
+		parser = metabundle
+		project = parser.getSessionDefinition(tarname)
+	except Exception as e:
+		if adpReady:
+			parser = metabundleADP
+			project = parser.getSessionDefinition(tarname)
+		else:
+			raise e
+			
 	isSpec = False
 	if project.sessions[0].observations[0].mode not in ('TBW', 'TBN'):
 		if project.sessions[0].spcSetup[0] != 0 and project.sessions[0].spcSetup[1] != 0:
 			isSpec = True
 			
-	meta = metabundle.getSessionMetaData(tarname)
+	meta = parser.getSessionMetaData(tarname)
 	tag = meta[1]['tag']
 	barcode = meta[1]['barcode']
-	meta = metabundle.getSessionSpec(tarname)
+	meta = parser.getSessionSpec(tarname)
 	beam = meta['drxBeam']
 	date = mcs.mjdmpm2datetime(int(meta['MJD']), int(meta['MPM']))
 	datestr = date.strftime("%y%m%d")
