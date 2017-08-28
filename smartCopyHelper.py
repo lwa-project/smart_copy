@@ -15,7 +15,7 @@ from zeroconf import Zeroconf
 
 from lsl.common import mcs, metabundle
 try:
-	from lsl.commmon import metabundleADP
+	from lsl.common import metabundleADP
 	adpReady = True
 except ImportError:
 	adpReady = False
