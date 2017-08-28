@@ -120,14 +120,15 @@ def parseMetadata(tarname):
 	
 	try:
 		parser = metabundle
-		project = parser.getSessionDefinition(tarname)
+		parser.getSessionSpec(tarname)
 	except Exception as e:
 		if adpReady:
 			parser = metabundleADP
-			project = parser.getSessionDefinition(tarname)
+			parser.getSessionSpec(tarname)
 		else:
 			raise e
 			
+	project = parser.getSessionDefinition(tarname)
 	isSpec = False
 	if project.sessions[0].observations[0].mode not in ('TBW', 'TBN'):
 		if project.sessions[0].spcSetup[0] != 0 and project.sessions[0].spcSetup[1] != 0:

@@ -116,14 +116,15 @@ def parseMetadata(tarname):
 	
 	try:
 		parser = metabundle
-		project = parser.getSessionDefinition(tarname)
+		parser.getSessionSpec(tarname)
 	except Exception as e:
 		if adpReady:
 			parser = metabundleADP
-			project = parser.getSessionDefinition(tarname)
+			parser.getSessionSpec(tarname)
 		else:
 			raise e
 			
+	project = parser.getSessionDefinition(tarname)
 	isSpec = False
 	if project.sessions[0].observations[0].mode not in ('TBW', 'TBN'):
 		if project.sessions[0].spcSetup[0] != 0 and project.sessions[0].spcSetup[1] != 0:
@@ -283,11 +284,12 @@ def main(args):
 			destUser = config['args'][-1]
 			
 			# Validate the UCF username
-			try:
-				output = subprocess.check_output(['ssh', 'mcsdr@lwaucf1', 'ls /data/network/recent_data/%s' % destUser])
-			except subprocess.CalledProcessError:
-				raise RuntimeError("Invalid UCF username/path: %s" % destUser)
-				
+			if SITE != 'lwasv':
+				try:
+					output = subprocess.check_output(['ssh', 'mcsdr@lwaucf1', 'ls /data/network/recent_data/%s' % destUser])
+				except subprocess.CalledProcessError:
+					raise RuntimeError("Invalid UCF username/path: %s" % destUser)
+					
 			# Process the input files
 			for filename in filenames:
 				## Parse the metadata
