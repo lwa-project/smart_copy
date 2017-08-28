@@ -30,6 +30,11 @@ __revision__ = '$Rev$'
 __date__ = '$LastChangedDate$'
 __all__ = ['MCSCommunicate', '__version__', '__revision__', '__date__', '__all__']
 
+#
+# Site Name
+#
+SITE = socket.gethostname().split('-', 1)[0]
+
 
 #
 # Default Configuration File
@@ -419,6 +424,7 @@ def main(args):
 	logger.info('Version: %s', __version__)
 	logger.info('Revision: %s', shortRevision)
 	logger.info('Last Changed: %s',shortDate)
+	logger.info('Site: %s', SITE)
 	logger.info('Current MJD: %i', mjd)
 	logger.info('Current MPM: %i', mpm)
 	logger.info('All dates and times are in UTC except where noted')

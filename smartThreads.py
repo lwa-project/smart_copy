@@ -27,6 +27,9 @@ __all__ = ['MonitorStation', 'ManageDR', '__version__', '__revision__', '__all__
 smartThreadsLogger = logging.getLogger('__main__')
 
 
+# Site name to help figure out how many data recorders there are
+SITE = socket.gethostname().split('-', 1)[0]
+
 # Serial number generator for the queue entries
 sng = SerialNumber()
 
@@ -46,7 +49,8 @@ class MonitorStation(object):
 		
 		# Setup the data recorder busy list
 		self.busy = {}
-		for i in xrange(1, 5+1):
+		nDR = 2 if SITE == 'lwasv' else 5
+		for i in xrange(1, nDR+1):
 			self.busy['DR%i' % i] = True
 			
 		# Setup the MCS command queue state

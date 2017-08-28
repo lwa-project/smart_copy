@@ -12,6 +12,9 @@ from datetime import datetime
 from zeroconf import Zeroconf
 
 
+SITE = socket.gethostname().split('-', 1)[0]
+
+
 def usage(exitCode=None):
 	print """smartCopyPause.py - Pause the copy processing queue on the specified DR
 
@@ -162,7 +165,8 @@ def main(args):
 		inPort = int(zinfo.properties['MESSAGEOUTPORT'], 10)
 		
 		cmds = []
-		for i in xrange(1, 5+1):
+		nDR = 2 if SITE == 'lwasv' else 5
+		for i in xrange(1, nDR+1):
 			dr = 'DR%i' % i
 			if config['all'] or dr in config['args']:
 				cmds.append( buildPayload(inHost, "PAU", data=dr) )

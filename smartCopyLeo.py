@@ -16,7 +16,8 @@ from zeroconf import Zeroconf
 from lsl.common import mcs, metabundle
 
 
-DEFAULT_PATH = '/data2/from_lwa1/'
+SITE = socket.gethostname().split('-', 1)[0]
+DEFAULT_PATH = '/data2/from_%s/' % SITE
 
 
 def usage(exitCode=None):
@@ -31,6 +32,8 @@ Options:
 -q, --query       Query the smart copy server
 
 Note:
+  Files will be copied to '%s' on leo by default.
+  
   For -q/--query calls, valid MIB entries are:
     OBSSTATUS_DR# - whether or not DR# is recording data
     
@@ -44,7 +47,7 @@ Note:
     ACTIVE_PROGRESS_DR# - active copy progress on DR#
     ACTIVE_SPEED_DR#- active copy speed on DR#
     ACTIVE_REMAINING_DR# - active copy time remaining on DR#
-"""
+""" % DEFAULT_PATH
 
 	if exitCode is not None:
 		sys.exit(exitCode)

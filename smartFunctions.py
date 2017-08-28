@@ -7,6 +7,7 @@ import struct
 import logging
 import threading
 import subprocess
+from socket import gethostname
 
 from smartThreads import *
 
@@ -47,6 +48,7 @@ class SmartCopy(object):
 		self.subSystem = 'SCM'
 		self.serialNumber = '1'
 		self.version = str(__version__)
+		self.site = gethostname().split('-', 1)[0]
 		
 		# SmartCopy system state
 		self.currentState = {}
@@ -113,7 +115,8 @@ class SmartCopy(object):
 		else:
 			self.currentState['drThreads'] = {}
 			self.globalInhibit = {}
-			for i in (1,2,3,4,5):
+			drs = (1,2) if self.site == 'lwasv' else (1,2,3,4,5)
+			for i in drs:
 				dr = 'DR%i' % i
 				self.currentState['drThreads'][dr] = ManageDR(dr, SCCallbackInstance=self)
 				self.globalInhibit[dr] = True
