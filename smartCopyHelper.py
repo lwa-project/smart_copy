@@ -98,8 +98,6 @@ def parseOptions(args):
 		raise RuntimeError("Only one argument is allowed for query operations")
 	if not config['query'] and not config['version'] and len(config['args']) < 2:
 		raise RuntimeError("Must specify both a metadata file and a UCF username for the copy")
-	if SITE == 'lwasv':
-		raise RuntimeError("Copying to the LWAUCF is not currently supported at LWA-SV")
 		
 	# Return configuration
 	return config
