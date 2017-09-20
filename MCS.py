@@ -374,9 +374,17 @@ class ReferenceServer(object):
 			message = dict(poller.poll(timeout*1000))
 			if message:
 				if message.get(socket) == zmq.POLLIN:
-					message = socket.recv(zmq.NOBLOCK)
+					try:
+						message = socket.recv(zmq.NOBLOCK)
+					except zmq.ZMQError as e:
+						self.logger.error('_generator: error on recv: %s', str(e))
+						continue
 					if message == b'next_ref':
-						socket.send(b"%i" % i)
+						try:
+							socket.send(b"%i" % i)
+						except zmq.ZMQError as e:
+							self.logger.error('_generator: error on send: %s', str(e))
+							continue
 						i += 1
 						
 		poller.unregister(socket)
