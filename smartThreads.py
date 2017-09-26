@@ -543,7 +543,7 @@ class ManageDR(object):
 		# Get how many lines are in the logfile
 		try:
 			totalSize = int(subprocess.check_output(['awk', "{sum+=$1} END {print sum}", logname]), 10)
-		except subprocess.CalledProcessError:
+		except (subprocess.CalledProcessError, ValueError):
 			totalSize = 0
 			
 		# If we have at least 1 TB of files to cleanup, run the cleanup.  Otherwise, wait.
