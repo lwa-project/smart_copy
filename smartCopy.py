@@ -84,7 +84,7 @@ def parseOptions(args):
 	# Validate
 	if config['query'] and len(config['args']) != 1:
 		raise RuntimeError("Only one argument is allowed for query operations")
-	if not config['query'] and not config['version'] and len(config['args']) != 2:
+	if not config['query'] and not config['version'] and len(config['args']) < 2:
 		raise RuntimeError("Must specify both a source and destination for the copy")
 		
 	# Return configuration
