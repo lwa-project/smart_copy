@@ -284,12 +284,11 @@ def main(args):
 			destUser = config['args'][-1]
 			
 			# Validate the UCF username
-			if SITE != 'lwasv':
-				try:
-					output = subprocess.check_output(['ssh', 'mcsdr@lwaucf1', 'ls /data/network/recent_data/%s' % destUser])
-				except subprocess.CalledProcessError:
-					raise RuntimeError("Invalid UCF username/path: %s" % destUser)
-					
+			try:
+				output = subprocess.check_output(['ssh', 'mcsdr@lwaucf1', 'ls /data/network/recent_data/%s' % destUser])
+			except subprocess.CalledProcessError:
+				raise RuntimeError("Invalid UCF username/path: %s" % destUser)
+				
 			# Process the input files
 			for filename in filenames:
 				## Parse the metadata
