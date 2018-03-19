@@ -49,7 +49,7 @@ class MonitorStation(object):
 		
 		# Setup the data recorder busy list
 		self.busy = {}
-		nDR = 2 if SITE == 'lwasv' else 5
+		nDR = 3 if SITE == 'lwasv' else 5
 		for i in xrange(1, nDR+1):
 			self.busy['DR%i' % i] = True
 			

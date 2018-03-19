@@ -166,7 +166,7 @@ def main(args):
 		inPort = int(zinfo.properties['MESSAGEOUTPORT'], 10)
 		
 		cmds = []
-		nDR = 2 if SITE == 'lwasv' else 5
+		nDR = 3 if SITE == 'lwasv' else 5
 		for i in xrange(1, nDR+1):
 			dr = 'DR%i' % i
 			if config['all'] or dr in config['args']:
