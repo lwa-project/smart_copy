@@ -1,0 +1,107 @@
+#!/bin/bash
+
+. /lib/lsb/init-functions
+
+SERVICE_NAME='smart-copy'
+EXEC_PATH='/home/op1/SmartCopy'
+
+check_self() {
+	output=`service $SERVICE_NAME status`
+	if [ "$output" != "not running" ]; then
+		log_action_msg "$SERVICE_NAME appears to be running" || true
+		exit 0
+	fi
+}
+
+check_mcs_sch() {
+	output=`service mcs-sch status`
+	if [ "$output" == "not running" ]; then
+		log_action_msg "mcs-sch does not appear to be running" || true
+		log_end_msg 1 || true
+		exit 0
+	fi
+}
+
+check_mcs_exec() {
+	output=`service mcs-exec status`
+	if [ "$output" == "not running" ]; then
+		log_action_msg "mcs-exec does not appear to be running" || true
+		log_end_msg 0 || true
+		exit 0
+	fi
+}
+
+save_runtime_log() {
+	if [ -e $EXEC_PATH/runtime.log ]; then
+		dtag=`date +%y%m%d.%H%M%S`
+		su op1 -c "cd $EXEC_PATH && mv runtime.log runtime.log.$dtag"
+	fi
+}
+
+start() {
+	log_daemon_msg "Starting SmartCopy"
+	check_mcs_sch
+	check_mcs_exec
+	save_runtime_log
+	logfile=`tempfile -p smart-copy-`
+	if su op1 -c "cd $EXEC_PATH && screen -d -m -S SmartCopy ./smart_cmnd.py -d -l runtime.log" > $logfile 2>&1; then
+		log_end_msg 0 || true
+	else
+		log_end_msg 1 || true
+		cat $logfile
+	fi
+	rm -f $logfile
+}
+
+stop() {
+	log_daemon_msg "Stopping SmartCopy"
+	logfile=`tempfile -p smart-copy-`
+	if su op1 -c "ps aux | grep 'smart_cmnd.py' | grep -v grep | grep -v -i screen | awk '{print \$2}' | xargs kill" > $logfile 2>&1; then
+		sleep 60
+		save_runtime_log
+		log_end_msg 0 || true
+	else
+		log_end_msg 1 || true
+		cat $logfile
+	fi
+	rm -f $logfile
+}
+
+status() {
+	output=`ps aux | grep "smart_cmnd.py" | grep -v grep | grep -v -i screen`
+	if [ "$output" != "" ]; then
+		procs=`echo "$output" | awk '{print $2}' | sed -e ':a;{N;s/\n/ /;ba}' `
+		echo "$SERVICE_NAME start/running, process $procs"
+	else
+		echo "not running"
+	fi
+}
+
+wait_socket_clear() {
+	log_daemon_msg "Waiting 60s for sockets to clear"
+	sleep 60
+	log_end_msg 0 || true
+}
+
+case "$1" in
+	start)
+		check_self
+		start
+		;;
+	stop)
+		stop
+		;;
+	status)
+		status
+		;;
+	restart|reload)
+		stop
+		wait_socket_clear
+		start
+		;;
+	*)
+		echo $"Usage $0 {start|stop|restart|reload|status}"
+		exit 1
+esac
+
+exit 0
