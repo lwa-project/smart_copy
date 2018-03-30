@@ -274,7 +274,7 @@ class InterruptibleCopy(object):
 		
 		if self.thread is None:
 			if self.destpath == DELETE_MARKER_QUEUE:
-				self.debug('Readying delete of %s:%s', self.host, self.hostpath)
+				smartCommonLogger.debug('Readying delete of %s:%s', self.host, self.hostpath)
 				self.status = 'complete'
 				return True
 				
