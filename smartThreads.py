@@ -443,7 +443,7 @@ class ManageDR(object):
 		except KeyError:
 			return False, 'Unknown copy command ID'
 			
-	def addDeleteCommand(self, id):
+	def addDeleteCommand(self, host, hostpath):
 		"""
 		Add a delete command to the queue and return the ID.
 		"""
