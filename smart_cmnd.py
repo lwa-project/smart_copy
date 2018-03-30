@@ -370,7 +370,7 @@ class MCSCommunicate(Communicate):
 					self.commandStatus[fullSlotTime] = [('SCN', reference, exitCode), ]
 					
 			# DEL
-			elif commond == 'SRM':
+			elif command == 'SRM':
 				host, hostpath = data.split(':', 1)
 				
 				status, exitCode = self.SubSystemInstance.addDeleteCommand(host, host, path)
