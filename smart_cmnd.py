@@ -373,7 +373,7 @@ class MCSCommunicate(Communicate):
 			elif command == 'SRM':
 				host, hostpath = data.split(':', 1)
 				
-				status, exitCode = self.SubSystemInstance.addDeleteCommand(host, host, path)
+				status, exitCode = self.SubSystemInstance.addDeleteCommand(host, host, hostpath)
 				if status:
 					packed_data = exitCode
 					exitCode = 0x00
