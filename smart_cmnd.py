@@ -371,9 +371,14 @@ class MCSCommunicate(Communicate):
 					
 			# DEL
 			elif command == 'SRM':
+				now = False
+				if data[:5] == '-tNOW':
+					now = True
+					data = data.split('-tNOW', 1)[1]
+					data = data.strip()
 				host, hostpath = data.split(':', 1)
 				
-				status, exitCode = self.SubSystemInstance.addDeleteCommand(host, host, hostpath)
+				status, exitCode = self.SubSystemInstance.addDeleteCommand(host, host, hostpath, now=now)
 				if status:
 					packed_data = exitCode
 					exitCode = 0x00

@@ -291,7 +291,7 @@ class SmartCopy(object):
 			self.currentState['lastLog'] = 'SCN: %s' % commandExitCodes[0x01]
 			return False, 0x01
 			
-	def addDeleteCommand(self, dr, host, hostpath):
+	def addDeleteCommand(self, dr, host, hostpath, now=False):
 		# Check the operational status of the system
 		if self.currentState['status'] != 'NORMAL':
 			self.currentState['lastLog'] = 'SRM: %s' % commandExitCodes[0x04]
@@ -301,7 +301,7 @@ class SmartCopy(object):
 			return False, 0x02
 			
 		try:
-			status, value = self.currentState['drThreads'][dr].addDeleteCommand(host, hostpath)
+			status, value = self.currentState['drThreads'][dr].addDeleteCommand(host, hostpath, now=now)
 			if not status:
 				self.currentState['lastLog'] = 'SRM: %s - error queuing delete' % commandExitCodes[0x02]
 				return False, 0x02

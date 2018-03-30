@@ -443,7 +443,7 @@ class ManageDR(object):
 		except KeyError:
 			return False, 'Unknown copy command ID'
 			
-	def addDeleteCommand(self, host, hostpath):
+	def addDeleteCommand(self, host, hostpath, now=False):
 		"""
 		Add a delete command to the queue and return the ID.
 		"""
@@ -451,7 +451,8 @@ class ManageDR(object):
 		id = str( sng.get() )
 		
 		try:
-			self.queue.put( (host, hostpath, host, DELETE_MARKER, id) )
+			dflag = DELETE_MARKER_NOW if now else DELETE_MARKER_QUEUE
+			self.queue.put( (host, hostpath, host, dflag, id) )
 			self.results[id] = 'queued delete for %s:%s' % (host, hostpath)
 			return True,  id
 		except Exception as e:

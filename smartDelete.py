@@ -24,6 +24,9 @@ Options:
 -h, --help        Display this help information
 -v, --version     Display version information
 -q, --query       Query the smart copy server
+-n, --now         Request that the delete(s) be executed as soon as the 
+                  command(s) reach the front of the queue (default = no,
+                  queue for batch delete
 
 Note:
   For -q/--query calls, valid MIB entries are:
@@ -56,11 +59,12 @@ def parseOptions(args):
 	# Default parameters
 	config['version'] = False
 	config['query'] = False
+	config['now'] = False
 	config['args'] = []
 	
 	# Read in and process the command line flags
 	try:
-		opts, args = getopt.getopt(args, "hvq", ["help", "version", "query"])
+		opts, args = getopt.getopt(args, "hvqn", ["help", "version", "query", "now"])
 	except getopt.GetoptError, err:
 		# Print help information and exit:
 		print str(err) # will print something like "option -a not recognized"
@@ -74,6 +78,8 @@ def parseOptions(args):
 			config['version'] = True
 		elif opt in ('-q', '--query'):
 			config['query'] = True
+		elif opt in ('-n', '--now'):
+			config['now'] = True
 		else:
 			assert False
 	
@@ -208,8 +214,12 @@ def main(args):
 					host = inHost
 					hostpath = os.path.abspath(hostpath)
 					
+				flag = ''
+				if config['now']:
+					flag = '-tNOW '
+					
 				infs.append( "Queuing delete for %s:%s" % (host, hostpath) )
-				cmds.append( buildPayload(inHost, "SRM", data="%s:%s" % (host, hostpath), refSocket=sockRef) )
+				cmds.append( buildPayload(inHost, "SRM", data="%s%s:%s" % (flag, host, hostpath), refSocket=sockRef) )
 			
 		try:
 			sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

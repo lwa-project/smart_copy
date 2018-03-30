@@ -19,13 +19,16 @@ from collections import OrderedDict
 
 __version__ = '0.1'
 __revision__ = '$Rev$'
-__all__ = ['SerialNumber', 'LimitedSizeDict', 'InterruptibleCopy', 'DELETE_MARKER', '__version__', '__revision__', '__all__']
+__all__ = ['SerialNumber', 'LimitedSizeDict', 'InterruptibleCopy', 
+           'DELETE_MARKER_QUEUE', 'DELETE_MARKER_NOW', 
+           '__version__', '__revision__', '__all__']
 
 
 smartCommonLogger = logging.getLogger('__main__')
 
 
-DELETE_MARKER = 'smartcopy_delete_this_file'
+DELETE_MARKER_QUEUE = 'smartcopy_queue_delete_this_file'
+DELETE_MARKER_NOW   = 'smartcopy_now_delete_this_file'
 
 
 class SerialNumber(object):
@@ -95,12 +98,9 @@ class InterruptibleCopy(object):
 		self.stdout, self.stderr = '', ''
 		self.status = ''
 		
-		if destpath == DELETE_MARKER:
-			self.status = 'complete'
-		else:
-			# Start the copy running
-			self.resume()
-			
+		# Start the copy or delete running
+		self.resume()
+		
 	def __str__(self):
 		return "%s = %s:%s -> %s:%s" % (self.id, self.host, self.hostpath, self.dest, self.destpath)
 		
@@ -269,11 +269,20 @@ class InterruptibleCopy(object):
 			
 	def resume(self):
 		"""
-		Resume the copy.
+		Resume the copy or delete.
 		"""
 		
 		if self.thread is None:
-			self.thread = threading.Thread(target=self._run)
+			if self.destpath == DELETE_MARKER_QUEUE:
+				self.debug('Readying delete of %s:%s', self.host, self.hostpath)
+				self.status = 'complete'
+				return True
+				
+			if destpath == DELETE_MARKER_NOW:
+				target = self._runDelete
+			else:
+				target = self._runCopy
+			self.thread = threading.Thread(target=target)
 			self.thread.setDaemon(1)
 			self.thread.start()
 			self.status = 'active'
@@ -295,7 +304,7 @@ class InterruptibleCopy(object):
 		
 		return True
 		
-	def _getCommand(self):
+	def _getCopyCommand(self):
 		"""
 		Build up a subprocess-compatible command needed to copy the data.
 		"""
@@ -324,13 +333,84 @@ class InterruptibleCopy(object):
 				
 		return cmd
 		
-	def _run(self):
+	def _runCopy(self):
 		"""
 		Start the copy.
 		"""
 		
 		# Get the command to use
-		cmd = self._getCommand()
+		cmd = self._getCopyCommand()
+		
+		# Start up the process and start looking at the stdout
+		self.process = subprocess.Popen(cmd, bufsize=1, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
+		watchOut = select.poll()
+		watchOut.register(self.process.stdout)
+		smartCommonLogger.debug('Launched \'%s\' with PID %i', ' '.join(cmd), self.process.pid)
+		
+		# Read from stdout while the copy is running so we can get 
+		# an idea of what is going on with the progress
+		while True:
+			## Is there something to read?
+			stdout = ''
+			while watchOut.poll(1):
+				if self.process.poll() is None:
+					try:
+						stdout += self.process.stdout.read(1)
+					except ValueError:
+						break
+				else:
+					break
+					
+			## Did we read something?  If not, sleep
+			if stdout == '':
+				time.sleep(1)
+			else:
+				self.stdout = stdout.rstrip()
+				
+			## Are we done?
+			self.process.poll()
+			if self.process.returncode is not None:
+				### Yes, break out of this endless loop
+				break
+				
+		# Pull out anything that might be stuck in the buffers
+		self.stdout, self.stderr = self.process.communicate()
+		
+		smartCommonLogger.debug('PID %i exited with code %i', self.process.pid, self.process.returncode)
+		
+		if self.process.returncode == 0:
+			self.status = 'complete'
+		elif self.process.returncode < 0:
+			self.status = 'paused'
+		else:
+			smartCommonLogger.debug('failed -> %s', self.stderr.rstrip())
+			self.status = 'error: %s' % self.stderr
+			
+		return self.process.returncode
+		
+	def _getDeleteCommand(self):
+		"""
+		Build up a subprocess-compatible command needed to delete the data.
+		"""
+		
+		if self.host == '':
+			# Locally originating delete
+			cmd = ["rm" "-f", self.hostpath]
+			
+		else:
+			# Remotely originating delete
+			cmd = ["ssh", "-t", "-t", "mcsdr@%s" % self.host.lower()]
+			cmd.append( 'shopt -s huponexit && rm -f %s | cat' % self.hostpath )
+			
+		return cmd
+		
+	def _runDelete(self):
+		"""
+		Start the delete.
+		"""
+		
+		# Get the command to use
+		cmd = self._getDeleteCommand()
 		
 		# Start up the process and start looking at the stdout
 		self.process = subprocess.Popen(cmd, bufsize=1, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
