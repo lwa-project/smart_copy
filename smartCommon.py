@@ -278,7 +278,7 @@ class InterruptibleCopy(object):
 				self.status = 'complete'
 				return True
 				
-			if destpath == DELETE_MARKER_NOW:
+			if self.destpath == DELETE_MARKER_NOW:
 				target = self._runDelete
 			else:
 				target = self._runCopy
