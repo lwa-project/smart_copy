@@ -369,6 +369,23 @@ class MCSCommunicate(Communicate):
 				except KeyError:
 					self.commandStatus[fullSlotTime] = [('SCN', reference, exitCode), ]
 					
+			# DEL
+			elif commond == 'SRM':
+				host, hostpath = data.split(':', 1)
+				
+				status, exitCode = self.SubSystemInstance.addDeleteCommand(host, host, path)
+				if status:
+					packed_data = exitCode
+					exitCode = 0x00
+				else:
+					packed_data = "0x%02X! %s" % (exitCode, self.SubSystemInstance.currentState['lastLog'])
+					
+				# Update the list of command executed
+				try:
+					self.commandStatus[fullSlotTime].append( ('SRM', reference, exitCode) )
+				except KeyError:
+					self.commandStatus[fullSlotTime] = [('SRM', reference, exitCode), ]
+					
 			# 
 			# Unknown command catch
 			#

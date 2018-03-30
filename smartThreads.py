@@ -443,6 +443,20 @@ class ManageDR(object):
 		except KeyError:
 			return False, 'Unknown copy command ID'
 			
+	def addDeleteCommand(self, id):
+		"""
+		Add a delete command to the queue and return the ID.
+		"""
+		
+		id = str( sng.get() )
+		
+		try:
+			self.queue.put( (host, hostpath, host, DELETE_MARKER, id) )
+			self.results[id] = 'queued delete for %s:%s' % (host, hostpath)
+			return True,  id
+		except Exception as e:
+			return False, str(e)
+			
 	def getCopyCommand(self, id):
 		"""
 		Return the status of the copy command.
@@ -565,7 +579,7 @@ class ManageDR(object):
 				fsize, filename = entry.split(None, 1)
 				try:
 					assert(not self.inhibit)
-					subprocess.check_output(['ssh', 'mcsdr@%s' % self.dr, 'sudo rm -f %s' % filename])
+					subprocess.check_output(['ssh', 'mcsdr@%s' % self.dr, 'sudo rm -f %s | cat' % filename])
 					smartThreadsLogger.info('Removed %s:%s of size %s', self.dr, filename, fsize)
 				except AssertionError:
 					retry.append( (fsize, filename) )

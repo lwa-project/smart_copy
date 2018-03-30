@@ -237,7 +237,7 @@ class SmartCopy(object):
 			except KeyError:
 				self.currentState['lastLog'] = 'PAU: %s - unknown data recorder %s' % (commandExitCodes[0x01], dr)
 				return False, 0x01
-		
+				
 	def resumeCopyQueue(self, dr, internal=False):
 		if not internal:
 			# Check the operational status of the system
@@ -268,7 +268,7 @@ class SmartCopy(object):
 			except KeyError:
 				self.currentState['lastLog'] = 'RES: %s - unknown data recorder %s' % (commandExitCodes[0x01], dr)
 				return False, 0x01
-		
+				
 	def cancelCopyCommand(self, id):
 		# Check the operational status of the system
 		if self.currentState['status'] != 'NORMAL':
@@ -290,7 +290,27 @@ class SmartCopy(object):
 		else:
 			self.currentState['lastLog'] = 'SCN: %s' % commandExitCodes[0x01]
 			return False, 0x01
-				
+			
+	def addDeleteCommand(self, dr, host, hostpath):
+		# Check the operational status of the system
+		if self.currentState['status'] != 'NORMAL':
+			self.currentState['lastLog'] = 'SRM: %s' % commandExitCodes[0x04]
+			return False, 0x04
+		if self.currentState['drThreads'] is None:
+			self.currentState['lastLog'] = 'SRM: %s' % commandExitCodes[0x02]
+			return False, 0x02
+			
+		try:
+			status, value = self.currentState['drThreads'][dr].addDeleteCommand(host, hostpath)
+			if not status:
+				self.currentState['lastLog'] = 'SRM: %s - error queuing delete' % commandExitCodes[0x02]
+				return False, 0x02
+			else:
+				return True, value
+		except KeyError:
+			self.currentState['lastLog'] = 'SRM: %s - unknown data recorder %s' % (commandExitCodes[0x01], dr)
+			return False, 0x01
+			
 	def getDRRecordState(self, dr):
 		"""
 		Return the record state of the specified data recorder.  Return a two 

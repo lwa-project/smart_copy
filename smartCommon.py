@@ -19,10 +19,13 @@ from collections import OrderedDict
 
 __version__ = '0.1'
 __revision__ = '$Rev$'
-__all__ = ['SerialNumber', 'LimitedSizeDict', 'InterruptibleCopy', '__version__', '__revision__', '__all__']
+__all__ = ['SerialNumber', 'LimitedSizeDict', 'InterruptibleCopy', 'DELETE_MARKER', '__version__', '__revision__', '__all__']
 
 
 smartCommonLogger = logging.getLogger('__main__')
+
+
+DELETE_MARKER = 'smartcopy_delete_this_file'
 
 
 class SerialNumber(object):
@@ -92,9 +95,12 @@ class InterruptibleCopy(object):
 		self.stdout, self.stderr = '', ''
 		self.status = ''
 		
-		# Start the copy running
-		self.resume()
-		
+		if destpath == DELETE_MARKER:
+			self.status = 'complete'
+		else:
+			# Start the copy running
+			self.resume()
+			
 	def __str__(self):
 		return "%s = %s:%s -> %s:%s" % (self.id, self.host, self.hostpath, self.dest, self.destpath)
 		
@@ -117,7 +123,7 @@ class InterruptibleCopy(object):
 				cmd = ['du', '-b', self.hostpath]
 			else:
 				cmd = ["ssh", "-t", "-t", "mcsdr@%s" % self.host.lower()]
-				cmd.append('du -b %s' % self.hostpath)
+				cmd.append('du -b %s | cat' % self.hostpath)
 				
 			try:
 				output = subprocess.check_output(cmd)
@@ -311,10 +317,10 @@ class InterruptibleCopy(object):
 			
 			if self.dest == self.host:
 				# Source and destination are on the same machine
-				cmd.append( 'shopt -s huponexit && rsync -avH --append --partial --progress %s %s' % (self.hostpath, self.destpath) )
+				cmd.append( 'shopt -s huponexit && rsync -avH --append --partial --progress %s %s | cat' % (self.hostpath, self.destpath) )
 			else:
 				# Source and destination are on different machines
-				cmd.append( 'shopt -s huponexit && rsync -avH --append --partial --progress %s %s:%s' % (self.hostpath, self.dest, self.destpath) )
+				cmd.append( 'shopt -s huponexit && rsync -avH --append --partial --progress %s %s:%s | cat' % (self.hostpath, self.dest, self.destpath) )
 				
 		return cmd
 		
