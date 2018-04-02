@@ -30,10 +30,12 @@ def usage(exitCode=None):
 Usage: smartCopyHelper.py [OPTIONS] metadata [metadata [...]] ucfName
 
 Options:
--h, --help        Display this help information
--v, --version     Display version information
--m, --metadata    Include the metadata with the copy
--q, --query       Query the smart copy server
+-h, --help         Display this help information
+-v, --version      Display version information
+-m, --metadata     Include the metadata with the copy
+-o, --obsevations  Comma separated list of obseration numbers to transfer
+                   (one based; default = -1 = tranfer all obserations)
+-q, --query        Query the smart copy server
 
 Note:
   For -q/--query calls, valid MIB entries are:
@@ -66,12 +68,13 @@ def parseOptions(args):
 	# Default parameters
 	config['version'] = False
 	config['metadata'] = False
+	config['obsID'] = -1
 	config['query'] = False
 	config['args'] = []
 	
 	# Read in and process the command line flags
 	try:
-		opts, args = getopt.getopt(args, "hvmq", ["help", "version", "metadata", "query"])
+		opts, args = getopt.getopt(args, "hvmo:q", ["help", "version", "metadata", "observations=", "query"])
 	except getopt.GetoptError, err:
 		# Print help information and exit:
 		print str(err) # will print something like "option -a not recognized"
@@ -85,6 +88,8 @@ def parseOptions(args):
 			config['version'] = True
 		elif opt in ('-m', '--metadata'):
 			config['metadata'] = True
+		elif opt in ('-o', '--observations'):
+			config['obsID'] = [int(v,10)-1 for v in value.split(',')]
 		elif opt in ('-q', '--query'):
 			config['query'] = True
 		else:
@@ -131,14 +136,14 @@ def parseMetadata(tarname):
 			isSpec = True
 			
 	meta = parser.getSessionMetaData(tarname)
-	tag = meta[1]['tag']
-	barcode = meta[1]['barcode']
+	tags = [meta[id]['tag'] for id in sorted(meta.keys())]
+	barcodes = [meta[id]['barcode'] for id in sorted(meta.keys())]
 	meta = parser.getSessionSpec(tarname)
 	beam = meta['drxBeam']
 	date = mcs.mjdmpm2datetime(int(meta['MJD']), int(meta['MPM']))
 	datestr = date.strftime("%y%m%d")
 	
-	return tag, barcode, beam, date, isSpec
+	return tags, barcodes, beam, date, isSpec
 
 
 def getDRSUPath(beam, barcode):
@@ -293,21 +298,37 @@ def main(args):
 			for filename in filenames:
 				## Parse the metadata
 				try:
-					filetag, barcode, beam, date, isSpec = parseMetadata(filename)
+					filetags, barcodes, beam, date, isSpec = parseMetadata(filename)
 				except KeyError:
 					print "WARNING: could not parse '%s', skipping" % os.path.basename(filename)
 					continue
 					
-				## Get the path on the DR
-				drPath = getDRSUPath(beam, barcode)
-				
-				## Make the copy
-				if drPath is None:
-					### Problem
-					print "WARNING: could not find path for DRSU '%s' on DR%i, skipping" % (barcode, beam)
-				else:
-					### Everything is ok
-					inHost = "DR%i" % beam
+				## Go!
+				inHost = "DR%i" % beam
+				_drPathCache = {}
+				_done = []
+				for oid,(filetag,barcode) in enumerate(zip(filetags, barcodes)):
+					### See if we should transfer this file
+					if config['obsID'] != -1:
+						if oid not in config['obsID']:
+							continue
+							
+					### See if we have already transferred this file
+					if filetag in _done:
+						continue
+						
+					### Get the path on the DR
+					try:
+						drPath = _drPathCache[(beam,barcode)]
+					except KeyError:
+						_drPathCache[(beam,barcode)] = getDRSUPath(beam, barcode)
+						drPath = _drPathCache[(beam,barcode)]
+						
+					### Make the copy
+					if drPath is None:
+						print "WARNING: could not find path for DRSU '%s' on DR%i, skipping" % (barcode, beam)
+						continue
+						
 					srcPath= "%s:%s/DROS/%s/%s" % (inHost, drPath, 'Spec' if isSpec else 'Rec', filetag)
 					destPath = "%s:/mnt/network/recent_data/%s" % (inHost, destUser)
 					
@@ -345,6 +366,8 @@ def main(args):
 						infs.append( "Copying metadata %s to %s:%s" % (filename, dest, destpath) )
 						cmds.append( ["rsync", "-e ssh", "-avH", mtdPath, "mcsdr@%s:%s" % (dest, destpath)] )
 						
+					### Update the done list
+					_done.append( filetag )
 		try:
 			sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 			sockOut.settimeout(5)
