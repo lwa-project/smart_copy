@@ -65,7 +65,7 @@ def parseOptions(args):
 	config['args'] = args
 	
 	# Validate
-	if len(config['args']) < 1:
+	if not config['all'] and len(config['args']) < 1:
 		raise RuntimeError("Must specified a DR")
 		
 	# Return configuration
