@@ -123,7 +123,7 @@ class InterruptibleCopy(object):
 				cmd = ['du', '-b', self.hostpath]
 			else:
 				cmd = ["ssh", "-t", "-t", "mcsdr@%s" % self.host.lower()]
-				cmd.append('du -b %s | cat' % self.hostpath)
+				cmd.append('du -b %s' % self.hostpath)
 				
 			try:
 				output = subprocess.check_output(cmd)
@@ -326,10 +326,10 @@ class InterruptibleCopy(object):
 			
 			if self.dest == self.host:
 				# Source and destination are on the same machine
-				cmd.append( 'shopt -s huponexit && rsync -avH --append --partial --progress %s %s | cat' % (self.hostpath, self.destpath) )
+				cmd.append( 'shopt -s huponexit && rsync -avH --append --partial --progress %s %s' % (self.hostpath, self.destpath) )
 			else:
 				# Source and destination are on different machines
-				cmd.append( 'shopt -s huponexit && rsync -avH --append --partial --progress %s %s:%s | cat' % (self.hostpath, self.dest, self.destpath) )
+				cmd.append( 'shopt -s huponexit && rsync -avH --append --partial --progress %s %s:%s' % (self.hostpath, self.dest, self.destpath) )
 				
 		return cmd
 		
@@ -383,7 +383,7 @@ class InterruptibleCopy(object):
 		elif self.process.returncode < 0:
 			self.status = 'paused'
 		else:
-			smartCommonLogger.debug('failed -> %s', self.stderr.rstrip())
+			smartCommonLogger.debug('copy failed -> %s', self.stderr.rstrip())
 			self.status = 'error: %s' % self.stderr
 			
 		return self.process.returncode
@@ -400,7 +400,7 @@ class InterruptibleCopy(object):
 		else:
 			# Remotely originating delete
 			cmd = ["ssh", "-t", "-t", "mcsdr@%s" % self.host.lower()]
-			cmd.append( 'shopt -s huponexit && rm -f %s | cat' % self.hostpath )
+			cmd.append( 'shopt -s huponexit && rm -f %s' % self.hostpath )
 			
 		return cmd
 		
@@ -454,7 +454,7 @@ class InterruptibleCopy(object):
 		elif self.process.returncode < 0:
 			self.status = 'paused'
 		else:
-			smartCommonLogger.debug('failed -> %s', self.stderr.rstrip())
+			smartCommonLogger.debug('delete failed -> %s', self.stderr.rstrip())
 			self.status = 'error: %s' % self.stderr
 			
 		return self.process.returncode

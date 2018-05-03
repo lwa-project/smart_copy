@@ -580,7 +580,7 @@ class ManageDR(object):
 				fsize, filename = entry.split(None, 1)
 				try:
 					assert(not self.inhibit)
-					subprocess.check_output(['ssh', 'mcsdr@%s' % self.dr, 'sudo rm -f %s | cat' % filename])
+					subprocess.check_output(['ssh', '-t', '-t', 'mcsdr@%s' % self.dr, 'shopt -s huponexit && sudo rm -f %s' % filename])
 					smartThreadsLogger.info('Removed %s:%s of size %s', self.dr, filename, fsize)
 				except AssertionError:
 					retry.append( (fsize, filename) )
