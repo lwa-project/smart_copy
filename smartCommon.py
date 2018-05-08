@@ -400,7 +400,7 @@ class InterruptibleCopy(object):
 		else:
 			# Remotely originating delete
 			cmd = ["ssh", "-t", "-t", "mcsdr@%s" % self.host.lower()]
-			cmd.append( 'shopt -s huponexit && rm -f %s' % self.hostpath )
+			cmd.append( 'shopt -s huponexit && sudo rm -f %s' % self.hostpath )
 			
 		return cmd
 		
