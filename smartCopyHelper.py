@@ -308,6 +308,11 @@ def main(args):
 				_drPathCache = {}
 				_done = []
 				for oid,(filetag,barcode) in enumerate(zip(filetags, barcodes)):
+					### Make sure we have a valid tag
+					if filetag in ('', 'UNK'):
+						print "WARNING: invalid filetag '%s' for observation %i of '%s', skipping" % (filetag, oid+1, filename)
+						continue
+						
 					### See if we should transfer this file
 					if config['obsID'] != -1:
 						if oid not in config['obsID']:
