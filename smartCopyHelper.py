@@ -292,8 +292,15 @@ def main(args):
             try:
                 output = subprocess.check_output(['ssh', 'mcsdr@lwaucf1', 'ls /data/network/recent_data/%s' % destUser])
             except subprocess.CalledProcessError:
-                raise RuntimeError("Invalid UCF username/path: %s" % destUser)
-                
+                if destUser[:4] == 'eLWA':
+                    try:
+                        output = subprocess.check_output(['ssh', 'mcsdr@lwaucf1', 'mkdir -p /data/network/recent_data/%s' % destUser])
+                        print "NOTE: auto-created eLWA path: %s" % destUser
+                    except subprocess.CalledProcessError:
+                        raise RuntimeError("Could not auto-create eLWA path: %s" % destUser)
+                else:
+                    raise RuntimeError("Invalid UCF username/path: %s" % destUser)
+                    
             # Process the input files
             for filename in filenames:
                 ## Parse the metadata
