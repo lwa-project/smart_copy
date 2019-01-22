@@ -327,7 +327,7 @@ def main(args):
                         hostpath = os.path.abspath(hostpath)
                         
                     try:
-                        dest ,destpath = destPath.split(':', 1)
+                        dest, destpath = destPath.split(':', 1)
                     except ValueError:
                         dest, destpath = '', destPath
                     if dest == '':
