@@ -311,7 +311,7 @@ class InterruptibleCopy(object):
         
         if self.host == '':
             # Locally originating copy
-            cmd = ["rsync",  "-avH",  "--append-verify", "--partial", "--progress", self.hostpath]
+            cmd = ["rsync",  "-avH",  "--append", "--partial", "--progress", self.hostpath]
             
             if self.dest == '':
                 # Local destination
@@ -326,10 +326,10 @@ class InterruptibleCopy(object):
             
             if self.dest == self.host:
                 # Source and destination are on the same machine
-                cmd.append( 'shopt -s huponexit && rsync -avH --append-verify --partial --progress %s %s' % (self.hostpath, self.destpath) )
+                cmd.append( 'shopt -s huponexit && rsync -avH --append --partial --progress %s %s' % (self.hostpath, self.destpath) )
             else:
                 # Source and destination are on different machines
-                cmd.append( 'shopt -s huponexit && rsync -avH --append-verify --partial --progress %s %s:%s' % (self.hostpath, self.dest, self.destpath) )
+                cmd.append( 'shopt -s huponexit && rsync -avH --append --partial --progress %s %s:%s' % (self.hostpath, self.dest, self.destpath) )
                 
         return cmd
         
