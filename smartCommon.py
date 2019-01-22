@@ -33,7 +33,7 @@ DELETE_MARKER_NOW   = 'smartcopy_now_delete_this_file'
 
 
 IS_UNRELIABLE_LINK = False
-if gethostname().split('-').split('-', 1)[0] in ('lwasv',):
+if gethostname().split('-', 1)[0] in ('lwasv',):
     IS_UNRELIABLE_LINK = True
 
 
@@ -318,7 +318,7 @@ class InterruptibleCopy(object):
         
         if not IS_UNRELIABLE_LINK:
             # Ignore reliable links
-            return None
+            cmd = None
             
         if self.host == '':
             # Locally originating copy
@@ -329,7 +329,7 @@ class InterruptibleCopy(object):
                 cmd.append( "%s" % self.destpath )
             else:
                 # Remote destination
-                return None
+                cmd = None
                 
         else:
             # Remotely originating copy
@@ -340,8 +340,10 @@ class InterruptibleCopy(object):
                 cmd.append( 'truncate -c -s -512K %s' % self.destpath )
             else:
                 # Source and destination are on different machines
-                return None
+                cmd = None
                 
+        return cmd
+        
     def _getCopyCommand(self):
         """
         Build up a subprocess-compatible command needed to copy the data.
@@ -388,9 +390,9 @@ class InterruptibleCopy(object):
             try:
                 trunc_p = subprocess.Popen(trunc)
                 trunc_s = trunc_p.wait()
-                smartCommonLogger.warning('Truncating dest. file with \'%s\', status %i', ' '.join(cmd), trunc_s)
+                smartCommonLogger.warning('Truncating destination file with \'%s\', status %i', ' '.join(trunc), trunc_s)
             except Exception as trunc_e:
-                smartCommonLogger.error('Error truncating dest file with \'%s\': %s', ' '.join(cmd), str(trunc_e))
+                smartCommonLogger.error('Error truncating destination file with \'%s\': %s', ' '.join(trunc), str(trunc_e))
                 
         # Start up the process and start looking at the stdout
         self.process = subprocess.Popen(cmd, bufsize=1, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
