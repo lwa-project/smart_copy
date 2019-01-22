@@ -326,7 +326,12 @@ class InterruptibleCopy(object):
             
             if self.dest == '':
                 # Local destination
-                cmd.append( "%s" % self.destpath )
+                ## Directory/path check
+                if os.path.exists(self.destpath) and os.path.isdir(self.destpath):
+                    filename = os.path.basename(self.hostpath)
+                    cmd.append( "%s" % os.path.join(self.destpath, filename) )
+                else:
+                    cmd = None
             else:
                 # Remote destination
                 cmd = None
@@ -337,7 +342,8 @@ class InterruptibleCopy(object):
             
             if self.dest == self.host:
                 # Source and destination are on the same machine
-                cmd.append( 'truncate -c -s -512K %s' % self.destpath )
+                cmd.append( 'if test -d %s; then truncate -c -s -512K %s/`basename %s`; else truncate -c -s -512K %s' % (self.destpath, self.destpath, self.hostpath, self.destpath) )
+                check_test = True
             else:
                 # Source and destination are on different machines
                 cmd = None
