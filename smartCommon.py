@@ -14,6 +14,7 @@ try:
     import cStringIO as StringIO
 except ImportError:
     import StringIO
+from socket import gethostname
 
 from collections import OrderedDict
 
@@ -29,6 +30,11 @@ smartCommonLogger = logging.getLogger('__main__')
 
 DELETE_MARKER_QUEUE = 'smartcopy_queue_delete_this_file'
 DELETE_MARKER_NOW   = 'smartcopy_now_delete_this_file'
+
+
+IS_UNRELIABLE_LINK = False
+if gethostname().split('-').split('-', 1)[0] in ('lwasv',):
+    IS_UNRELIABLE_LINK = True
 
 
 class SerialNumber(object):
@@ -304,6 +310,38 @@ class InterruptibleCopy(object):
         
         return True
         
+    def _getTruncateCommand(self):
+        """
+        Build up a subprocess-compatible command needed to truncate a file on 
+        unreliable links.  This returns None if no truncate command is needed.
+        """
+        
+        if not IS_UNRELIABLE_LINK:
+            # Ignore reliable links
+            return None
+            
+        if self.host == '':
+            # Locally originating copy
+            cmd = ['truncate', '-c', '-s -512K']
+            
+            if self.dest == '':
+                # Local destination
+                cmd.append( "%s" % self.destpath )
+            else:
+                # Remote destination
+                return None
+                
+        else:
+            # Remotely originating copy
+            cmd = ["ssh", "-t", "-t", "mcsdr@%s" % self.host.lower()]
+            
+            if self.dest == self.host:
+                # Source and destination are on the same machine
+                cmd.append( 'truncate -c -s -512K %s' % self.destpath )
+            else:
+                # Source and destination are on different machines
+                return None
+                
     def _getCopyCommand(self):
         """
         Build up a subprocess-compatible command needed to copy the data.
@@ -318,6 +356,8 @@ class InterruptibleCopy(object):
                 cmd.append( "%s" % self.destpath )
             else:
                 # Remote destination
+                ## --append-verify should be ok here
+                cmd[cmd.index('--append')] = '--append-verify'
                 cmd.append( "%s:%s" % (self.dest, self.destpath) )
                 
         else:
@@ -329,7 +369,8 @@ class InterruptibleCopy(object):
                 cmd.append( 'shopt -s huponexit && rsync -avH --append --partial --progress %s %s' % (self.hostpath, self.destpath) )
             else:
                 # Source and destination are on different machines
-                cmd.append( 'shopt -s huponexit && rsync -avH --append --partial --progress %s %s:%s' % (self.hostpath, self.dest, self.destpath) )
+                ## --append-verify should be ok here
+                cmd.append( 'shopt -s huponexit && rsync -avH --append-verify --partial --progress %s %s:%s' % (self.hostpath, self.dest, self.destpath) )
                 
         return cmd
         
@@ -341,6 +382,16 @@ class InterruptibleCopy(object):
         # Get the command to use
         cmd = self._getCopyCommand()
         
+        # Deal with unreliable links when copying data
+        trunc = self._getTruncateCommand()
+        if trunc is not None:
+            try:
+                trunc_p = subprocess.Popen(trunc)
+                trunc_s = trunc_p.wait()
+                smartCommonLogger.warning('Truncating dest. file with \'%s\', status %i', ' '.join(cmd), trunc_s)
+            except Exception as trunc_e:
+                smartCommonLogger.error('Error truncating dest file with \'%s\': %s', ' '.join(cmd), str(trunc_e))
+                
         # Start up the process and start looking at the stdout
         self.process = subprocess.Popen(cmd, bufsize=1, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
         watchOut = select.poll()
