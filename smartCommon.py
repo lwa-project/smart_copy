@@ -342,7 +342,7 @@ class InterruptibleCopy(object):
             
             if self.dest == self.host:
                 # Source and destination are on the same machine
-                cmd.append( 'if test -d %s; then truncate -c -s -512K %s/`basename %s`; else truncate -c -s -512K %s' % (self.destpath, self.destpath, self.hostpath, self.destpath) )
+                cmd.append( 'if test -d %s; then truncate -c -s -512K %s/`basename %s`; else truncate -c -s -512K %s; fi' % (self.destpath, self.destpath, self.hostpath, self.destpath) )
                 check_test = True
             else:
                 # Source and destination are on different machines
