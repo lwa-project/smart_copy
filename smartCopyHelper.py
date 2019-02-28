@@ -290,11 +290,11 @@ def main(args):
             
             # Validate the UCF username
             try:
-                output = subprocess.check_output(['ssh', 'mcsdr@lwaucf1', 'ls /data/network/recent_data/%s' % destUser])
+                output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'ls /data/network/recent_data/%s' % destUser])
             except subprocess.CalledProcessError:
                 if destUser[:4] == 'eLWA':
                     try:
-                        output = subprocess.check_output(['ssh', 'mcsdr@lwaucf1', 'mkdir -p /data/network/recent_data/%s' % destUser])
+                        output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'mkdir -p /data/network/recent_data/%s' % destUser])
                         print "NOTE: auto-created eLWA path: %s" % destUser
                     except subprocess.CalledProcessError:
                         raise RuntimeError("Could not auto-create eLWA path: %s" % destUser)
@@ -365,14 +365,14 @@ def main(args):
                     
                     if config['metadata']:
                         mtdPath = os.path.abspath(filename)
-                        destPath = "%s:/data/network/recent_data/%s" % ('lwaucf1', destUser)
+                        destPath = "%s:/data/network/recent_data/%s" % ('lwaucf0', destUser)
                         
                         try:
                             dest ,destpath = destPath.split(':', 1)
                         except ValueError:
                             dest, destpath = '', destPath
                         if dest == '':
-                            dest = 'lwaucf1'
+                            dest = 'lwaucf0'
                             destpath = os.path.abspath(destpath)
                             
                         infs.append( "Copying metadata %s to %s:%s" % (filename, dest, destpath) )
