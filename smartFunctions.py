@@ -109,7 +109,7 @@ class SmartCopy(object):
             self.currentState['pollingThread'] = MonitorStation(SCCallbackInstance=self)
         ## DR managers
         if self.currentState['drThreads'] is not None:
-            for drm in self.currentState['drThreads']:
+            for dr in self.currentState['drThreads']:
                 self.pauseCopyQueue(dr, internal=True)
                 self.currentState['drThreads'][dr].stop()
         else:
@@ -219,7 +219,7 @@ class SmartCopy(object):
                 
         if dr == 'ALL':
             for dr in self.currentState['drThreads']:
-                self.self.currentState['drThreads'][dr].pause()
+                self.currentState['drThreads'][dr].pause()
                 self.globalInhibit[dr] = True
                 
             return True, 'Done'
@@ -250,7 +250,7 @@ class SmartCopy(object):
                 
         if dr == 'ALL':
             for dr in self.currentState['drThreads']:
-                self.self.currentState['drThreads'][dr].resume()
+                self.currentState['drThreads'][dr].resume()
                 self.globalInhibit[dr] = False
                 
             return True, 'Done'
