@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import sys
 import zmq
 import math
@@ -23,6 +24,9 @@ except ImportError:
 
 SITE = socket.gethostname().split('-', 1)[0]
 DEFAULT_PATH = '/data2/from_%s/' % SITE
+
+
+_usernameRE = re.compile(r'ucfuser:[ \t]*(?P<username>[a-zA-Z1]+)(\/(?P<subdir>[a-zA-Z0-9\/\+\-_]+))?')
 
 
 def usage(exitCode=None):
@@ -110,12 +114,13 @@ def parseOptions(args):
 def parseMetadata(tarname):
     """
     Given a filename for a metadata tarball, parse the file and return a
-    five-element tuple of:
+    six-element tuple of:
      * filetag
      * DRSU barcode
      * beam
      * date
      * if the data is spectrometer or not
+     * originally requested UCF copy path or None if there was none
     """
     
     try:
@@ -135,14 +140,22 @@ def parseMetadata(tarname):
             isSpec = True
             
     meta = parser.getSessionMetaData(tarname)
-    tag = meta[1]['tag']
-    barcode = meta[1]['barcode']
+    tags = [meta[id]['tag'] for id in sorted(meta.keys())]
+    barcodes = [meta[id]['barcode'] for id in sorted(meta.keys())]
     meta = parser.getSessionSpec(tarname)
     beam = meta['drxBeam']
     date = mcs.mjdmpm2datetime(int(meta['MJD']), int(meta['MPM']))
     datestr = date.strftime("%y%m%d")
     
-    return tag, barcode, beam, date, isSpec
+    userpath = None
+    if project.sessions[0].dataReturnMethod == 'UCF':
+        mtch = _usernameRE.search(project.sessions[0].comments)
+        if mtch is not None:
+            userpath = mtch.group('username')
+            if mtch.group('subdir') is not None:
+                userpath = os.path.join(userpath, mtch.group('subdir'))
+                
+    return tags, barcodes, beam, date, isSpec, userpath
 
 
 def getDRSUPath(beam, barcode):
@@ -291,7 +304,7 @@ def main(args):
             for filename in filenames:
                 ## Parse the metadata
                 try:
-                    filetag, barcode, beam, date, isSpec = parseMetadata(filename)
+                    filetag, barcode, beam, date, isSpec, origPath = parseMetadata(filename)
                 except KeyError:
                     print "WARNING: could not parse '%s', skipping" % os.path.basename(filename)
                     continue

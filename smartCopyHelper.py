@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import sys
 import zmq
 import math
@@ -22,6 +23,9 @@ except ImportError:
 
 
 SITE = socket.gethostname().split('-', 1)[0]
+
+
+_usernameRE = re.compile(r'ucfuser:[ \t]*(?P<username>[a-zA-Z1]+)(\/(?P<subdir>[a-zA-Z0-9\/\+\-_]+))?')
 
 
 def usage(exitCode=None):
@@ -111,12 +115,13 @@ def parseOptions(args):
 def parseMetadata(tarname):
     """
     Given a filename for a metadata tarball, parse the file and return a
-    five-element tuple of:
+    six-element tuple of:
      * filetag
      * DRSU barcode
      * beam
      * date
      * if the data is spectrometer or not
+     * originally requested UCF copy path or None if there was none
     """
     
     try:
@@ -143,7 +148,15 @@ def parseMetadata(tarname):
     date = mcs.mjdmpm2datetime(int(meta['MJD']), int(meta['MPM']))
     datestr = date.strftime("%y%m%d")
     
-    return tags, barcodes, beam, date, isSpec
+    userpath = None
+    if project.sessions[0].dataReturnMethod == 'UCF':
+        mtch = _usernameRE.search(project.sessions[0].comments)
+        if mtch is not None:
+            userpath = mtch.group('username')
+            if mtch.group('subdir') is not None:
+                userpath = os.path.join(userpath, mtch.group('subdir'))
+                
+    return tags, barcodes, beam, date, isSpec, userpath
 
 
 def getDRSUPath(beam, barcode):
@@ -298,14 +311,18 @@ def main(args):
                         print "NOTE: auto-created eLWA path: %s" % destUser
                     except subprocess.CalledProcessError:
                         raise RuntimeError("Could not auto-create eLWA path: %s" % destUser)
+                elif destUser == 'original':
+                    ## This is ok since it just tells the script to use the orginal file path
+                    pass
                 else:
                     raise RuntimeError("Invalid UCF username/path: %s" % destUser)
                     
             # Process the input files
+            metadataDone = []
             for filename in filenames:
                 ## Parse the metadata
                 try:
-                    filetags, barcodes, beam, date, isSpec = parseMetadata(filename)
+                    filetags, barcodes, beam, date, isSpec, origPath = parseMetadata(filename)
                 except KeyError:
                     print "WARNING: could not parse '%s', skipping" % os.path.basename(filename)
                     continue
@@ -342,7 +359,13 @@ def main(args):
                         continue
                         
                     srcPath= "%s:%s/DROS/%s/%s" % (inHost, drPath, 'Spec' if isSpec else 'Rec', filetag)
-                    destPath = "%s:/mnt/network/recent_data/%s" % (inHost, destUser)
+                    if destUser == 'original':
+                        if origPath is None:
+                            print "WARNING: no original path found for '%s', skipping" % filetag
+                            continue
+                        destPath = "%s:/mnt/network/recent_data/%s" % (inHost, origPath)
+                    else:
+                        destPath = "%s:/mnt/network/recent_data/%s" % (inHost, destUser)
                     
                     try:
                         host, hostpath = srcPath.split(':', 1)
@@ -365,8 +388,11 @@ def main(args):
                     
                     if config['metadata']:
                         mtdPath = os.path.abspath(filename)
-                        destPath = "%s:/data/network/recent_data/%s" % ('lwaucf0', destUser)
-                        
+                        if destUser == 'original':
+                            destPath = "%s:/mnt/network/recent_data/%s" % (inHost, origPath)
+                        else:
+                            destPath = "%s:/data/network/recent_data/%s" % ('lwaucf0', destUser)
+                            
                         try:
                             dest ,destpath = destPath.split(':', 1)
                         except ValueError:
@@ -375,9 +401,11 @@ def main(args):
                             dest = 'lwaucf0'
                             destpath = os.path.abspath(destpath)
                             
-                        infs.append( "Copying metadata %s to %s:%s" % (filename, dest, destpath) )
-                        cmds.append( ["rsync", "-e ssh", "-avH", mtdPath, "mcsdr@%s:%s" % (dest, destpath)] )
-                        
+                        if mtdPath not in metadataDone:
+                            infs.append( "Copying metadata %s to %s:%s" % (filename, dest, destpath) )
+                            cmds.append( ["rsync", "-e ssh", "-avH", mtdPath, "mcsdr@%s:%s" % (dest, destpath)] )
+                            metadataDone.append( mtdPath )
+                            
                     ### Update the done list
                     _done.append( filetag )
         try:

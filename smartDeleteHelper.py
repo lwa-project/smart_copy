@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import sys
 import zmq
 import math
@@ -22,6 +23,9 @@ except ImportError:
 
 
 SITE = socket.gethostname().split('-', 1)[0]
+
+
+_usernameRE = re.compile(r'ucfuser:[ \t]*(?P<username>[a-zA-Z1]+)(\/(?P<subdir>[a-zA-Z0-9\/\+\-_]+))?')
 
 
 def usage(exitCode=None):
@@ -113,12 +117,13 @@ def parseOptions(args):
 def parseMetadata(tarname):
     """
     Given a filename for a metadata tarball, parse the file and return a
-    five-element tuple of:
+    six-element tuple of:
      * filetag
      * DRSU barcode
      * beam
      * date
      * if the data is spectrometer or not
+     * originally requested UCF copy path or None if there was none
     """
     
     try:
@@ -145,7 +150,15 @@ def parseMetadata(tarname):
     date = mcs.mjdmpm2datetime(int(meta['MJD']), int(meta['MPM']))
     datestr = date.strftime("%y%m%d")
     
-    return tags, barcodes, beam, date, isSpec
+    userpath = None
+    if project.sessions[0].dataReturnMethod == 'UCF':
+        mtch = _usernameRE.search(project.sessions[0].comments)
+        if mtch is not None:
+            userpath = mtch.group('username')
+            if mtch.group('subdir') is not None:
+                userpath = os.path.join(userpath, mtch.group('subdir'))
+                
+    return tags, barcodes, beam, date, isSpec, userpath
 
 
 def getDRSUPath(beam, barcode):
@@ -293,7 +306,7 @@ def main(args):
             for filename in filenames:
                 ## Parse the metadata
                 try:
-                    filetags, barcodes, beam, date, isSpec = parseMetadata(filename)
+                    filetags, barcodes, beam, date, isSpec, origPath = parseMetadata(filename)
                 except KeyError:
                     print "WARNING: could not parse '%s', skipping" % os.path.basename(filename)
                     continue
