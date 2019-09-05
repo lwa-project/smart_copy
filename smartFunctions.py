@@ -11,7 +11,7 @@ from socket import gethostname
 
 from smartThreads import *
 
-__version__ = "0.1"
+__version__ = "0.2"
 __revision__ = "$Rev$"
 __all__ = ['commandExitCodes', 'subsystemErrorCodes', 'SmartCopy', '__version__', '__revision__', '__all__']
 
@@ -556,72 +556,3 @@ class SmartCopy(object):
                 self.currentState['drThreads'][dr].pause()
                 
             return True
-            
-    def loadQueuesFromFile(self, filename):
-        """
-        Restore the copy queue from a file created by saveQueuesToFile().
-        """
-        
-        # Make sure we are in a safe state to add things
-        if self.currentState['status'] != 'NORMAL':
-            return False
-        if not os.path.exists(filename):
-            return False
-            
-        # Load the data
-        fh = open(filename)
-        for line in fh:
-            line = line.rstrip()
-            try:
-                dr, host, hostpath, dest, destpath = line.split(';;;', 4)
-            except Exception as e:
-                smartFunctionsLogger.debug("Error parsing queue file line '%s': %s", line, str(e))
-                
-            status, value = self.addCopyCommand(dr, host, hostpath, dest, destpath)
-            if not status:
-                smartFunctionsLogger.warning("Error queue saved copy: %s", str(value))
-                
-        # Done
-        return True
-        
-    def saveQueuesToFile(self, filename, force=False):
-        """
-        Save the copy queues to a file to help ensure continuity across restarts.
-        """
-        
-        # Make sure we are in a safe state to save things
-        if self.currentState['status'] != 'SHUTDWN':
-            return False
-            
-        # Make sure we aren't overwriting anything (unless we should)
-        if not force:
-            if os.path.exists(filename):
-                return False
-                
-        fh = open(filename, 'w')
-        for dr in self.currentState['drThreads']:
-            ## Active
-            try:
-                act = self.currentState['drThreads'][dr].active
-                if act is not None:
-                    host,hostpath,dest,destpath,id = act.host,act.hostpath,act.dest,act.destpath,act.id
-                    fh.write('%s;;;%s;;;%s;;;%s;;;%s\n' % (dr, host, hostpath, dest, destpath))
-                    
-            except AttributeError:
-                pass
-                
-            ## Queued
-            while True:
-                try:
-                    task =  self.currentState['drThreads'][dr].queue.get(False, 5)
-                    if task is not None:
-                        host,hostpath,dest,destpath,id = task
-                        fh.write('%s;;;%s;;;%s;;;%s;;;%s\n' % (dr, host, hostpath, dest, destpath))
-                        self.currentState['drThreads'][dr].queue.task_done()
-                        
-                except Queue.Empty:
-                    break
-                    
-        fh.close()
-        
-        return True

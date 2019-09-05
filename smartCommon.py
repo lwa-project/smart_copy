@@ -5,7 +5,10 @@ import re
 import sys
 import time
 import uuid
+import Queue
 import select
+import pickle
+import warnings
 import threading
 import traceback
 import subprocess
@@ -18,10 +21,10 @@ from socket import gethostname
 
 from collections import OrderedDict
 
-__version__ = '0.1'
+__version__ = '0.2'
 __revision__ = '$Rev$'
-__all__ = ['SerialNumber', 'LimitedSizeDict', 'InterruptibleCopy', 
-           'DELETE_MARKER_QUEUE', 'DELETE_MARKER_NOW', 
+__all__ = ['SerialNumber', 'LimitedSizeDict', 'DiskBackedQueue', 
+           'InterruptibleCopy', 'DELETE_MARKER_QUEUE', 'DELETE_MARKER_NOW',
            '__version__', '__revision__', '__all__']
 
 
@@ -83,10 +86,79 @@ class LimitedSizeDict(OrderedDict):
                 self.popitem(last=False)
 
 
+class DiskBackedQueue(Queue.Queue):
+    """
+    Sub-class of Queue.Queue that keeps a copy of the FIFO queue on-disk to 
+    insure continuity between power outages.
+    """
+    
+    _sep = '<<%>>'
+    
+    def __init__(self, filename, maxsize=0, restore=True):
+        self._filename = filename
+        self._lock = threading.RLock()
+        Queue.Queue.__init__(self, maxsize=maxsize)
+        
+        # See if we need to restore from disk
+        with self._lock:
+            if restore:
+                if os.path.exists(self._filename):
+                    if os.path.getsize(self._filename) > 0:
+                        with open(self._filename, 'r') as fh:
+                            contents = fh.read()
+                        contents = contents.split(self._sep)
+                        for i,entry in enumerate(contents):
+                            try:
+                                item = pickle.loads(entry)
+                                Queue.Queue.put(self, item)
+                            except Exception as e:
+                                warnings.warn("Failed to load entry %i of '%s': %s" \
+                                              % (i, os.path.basename(self._filename), str(e)),
+                                              RuntimeWarning)
+            else:
+                try:
+                    os.unlink(self._filename)
+                except OSError:
+                    pass
+                    
+    def _queue_file_io(self, put=None, task_done=False):
+        with self._lock:
+            try:
+                with open(self._filename, 'r') as fh:
+                    contents = fh.read()
+                contents = contents.split(self._sep)
+            except (OSError, IOError):
+                contents = []
+                
+            if put is not None:
+                contents.insert(0, pickle.dumps(put))
+                with open(self._filename, 'w') as fh:
+                    fh.write(self._sep.join(contents))
+            elif task_done:
+                contents = contents[:-1]
+                with open(self._filename, 'w') as fh:
+                    fh.write(self._sep.join(contents))
+                    
+    def put(self, item, block=True, timeout=None):
+        with self._lock:
+            Queue.Queue.put(self, item, block=block, timeout=timeout)
+            self._queue_file_io(put=item)
+            
+    def put_nowait(self, item):
+        with self._lock:
+            Queue.Queue.put_nowait(self, item)
+            self._queue_file_io(put=item)
+            
+    def task_done(self):
+        with self._lock:
+            Queue.Queue.task_done(self)
+            self._queue_file_io(task_done=True)
+
+
 class InterruptibleCopy(object):
     _rsyncRE = re.compile('.*?(?P<transferred>\d) +(?P<progress>\d{1,3}%) +(?P<speed>\d+\.\d+[ kMG]B/s) +(?P<remaining>.*)')
     
-    def __init__(self, host, hostpath, dest, destpath, id=None):
+    def __init__(self, host, hostpath, dest, destpath, id=None, tries=0, last_try=0.0):
         # Copy setup
         self.host = host
         self.hostpath = hostpath
@@ -98,6 +170,10 @@ class InterruptibleCopy(object):
             id = str( uuid.uuid4() )
         self.id = id
         
+        # Retry control
+        self.tries = tries
+        self.last_try = last_try
+        
         # Thread setup
         self.thread = None
         self.process= None
@@ -105,10 +181,36 @@ class InterruptibleCopy(object):
         self.status = ''
         
         # Start the copy or delete running
-        self.resume()
-        
+        if time.time() - self.last_try > 86400.0:
+            self.resume()
+        else:
+            self.status = 'error: too soon to retry'
+            
     def __str__(self):
         return "%s = %s:%s -> %s:%s" % (self.id, self.host, self.hostpath, self.dest, self.destpath)
+        
+    def getTryCount(self):
+        """
+        Return the number of times this operation has been tried.
+        """
+        
+        return self.tries
+        
+    def getLastTryTimestamp(self):
+        """
+        Return the timestamp of the last try.  Returns 0 if the operation has 
+        not be previously attempted.
+        """
+        
+        return self.last_try
+        
+    def getTaskSpecification(self):
+        """
+        Return the task specification tuple that can be used to re-add the 
+        copy to the processing queue.
+        """
+        
+        return (self.host, self.hostpath, self.dest, self.destpath, self.id, self.tries, self.last_try)
         
     def getStatus(self):
         """
@@ -291,6 +393,11 @@ class InterruptibleCopy(object):
             self.thread = threading.Thread(target=target)
             self.thread.setDaemon(1)
             self.thread.start()
+            if self.status != 'paused':
+                self.tries += 1
+                if self.destpath in (DELETE_MARKER_NOW, DELETE_MARKER_QUEUE):
+                    self.tries += 100
+                self.last_try = time.time()
             self.status = 'active'
             
             time.sleep(1)

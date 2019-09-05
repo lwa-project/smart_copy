@@ -19,7 +19,7 @@ except ImportError:
 
 from smartCommon import *
 
-__version__ = "0.1"
+__version__ = "0.2"
 __revision__ = "$Rev$"
 __all__ = ['MonitorStation', 'ManageDR', '__version__', '__revision__', '__all__']
 
@@ -228,7 +228,7 @@ class ManageDR(object):
         self.dr = dr
         self.SCCallbackInstance = SCCallbackInstance
         
-        self.queue = Queue.Queue()
+        self.queue = DiskBackedQueue('.DR%i.queue' % self.dr, restore=True)
         
         # Setup threading
         self.thread = None
@@ -352,17 +352,27 @@ class ManageDR(object):
                                 fh = open('completed_%s.log' % self.dr, 'a')
                                 fh.write('%s %s\n' % (fsize, self.active.hostpath))
                                 fh.close()
+                                
                         elif self.active.isFailed():
-                            ## No, save it to the 'error' log
-                            fsize = self.active.getFileSize()
-                            fh = open('error_%s.log' % self.dr, 'a')
-                            fh.write('%s %s\n' % (fsize, self.active.hostpath))
-                            fh.close()
+                            ## No, but let's see we we can save it
+                            if self.active.getTryCount() >= 7:
+                                ### No, it's failed too many times.  Save it to the 'error' log
+                                fsize = self.active.getFileSize()
+                                fh = open('error_%s.log' % self.dr, 'a')
+                                fh.write('%s %s\n' % (fsize, self.active.hostpath))
+                                fh.close()
+                            else:
+                                ### There's still a chance.  Stick it in again
+                                self.queue.put(self.active.getTaskSpecification())
+                                
                         ### Check to see if this was a remote copy.  If so, 
                         ### we need to release the lock
                         if self.active.isRemote():
                             rcl.release()
                             
+                        ### Let the queue know that we've done something with it
+                        self.queue.task_done()
+                        
                 if readyToProcess:
                     # Try to clean things up on the DR
                     if time.time() - tLastPurge > 86400:
@@ -376,6 +386,18 @@ class ManageDR(object):
                         if task is not None:
                             ### Make sure the task hasn't been canceled
                             if self.results[task[-1]] != 'canceled':
+                                ### Check if this task has been re-queued because of an error.
+                                ### If so, make sure that we haven't tried it again in at 
+                                ### least a day.
+                                if task[5] > 0 and (time.time() - task[6]) < 86400.0:
+                                    ## Let the queue know that we've done something with it
+                                    self.queue.task_done()
+                                    
+                                    ## Add it back in for later
+                                    self.queue.put(task)
+                                    time.sleep(5)
+                                    continue
+                                    
                                 ### If the copy appears to be remote, make sure that we can get 
                                 ### the network lock.  If we can't, add the task back to the end
                                 ### of the queue and skip to the next iteration
@@ -393,9 +415,6 @@ class ManageDR(object):
                                 ### Start it up.
                                 self.active = InterruptibleCopy(*task)
                                 self.results[self.active.id] = 'active/started for %s:%s -> %s:%s' % (task[0], task[1], task[2], task[3])
-                                
-                                ### Let the queue know that we've done something with it
-                                self.queue.task_done()
                                 
                     except Queue.Empty:
                         self.active = None
@@ -423,7 +442,7 @@ class ManageDR(object):
         id = str( sng.get() )
         
         try:
-            self.queue.put( (host, hostpath, dest, destpath, id) )
+            self.queue.put( (host, hostpath, dest, destpath, id, 0, 0.0) )
             self.results[id] = 'queued for %s:%s -> %s:%s' % (host, hostpath, dest, destpath)
             return True,  id
         except Exception as e:
@@ -452,7 +471,7 @@ class ManageDR(object):
         
         try:
             dflag = DELETE_MARKER_NOW if now else DELETE_MARKER_QUEUE
-            self.queue.put( (host, hostpath, host, dflag, id) )
+            self.queue.put( (host, hostpath, host, dflag, id, 0, 0.0) )
             self.results[id] = 'queued delete for %s:%s' % (host, hostpath)
             return True,  id
         except Exception as e:

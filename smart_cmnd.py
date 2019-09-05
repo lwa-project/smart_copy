@@ -25,7 +25,7 @@ from collections import deque
 from MCS import *
 from smartFunctions import SmartCopy
 
-__version__ = '0.1'
+__version__ = '0.2'
 __revision__ = '$Rev$'
 __date__ = '$LastChangedDate$'
 __all__ = ['MCSCommunicate', '__version__', '__revision__', '__date__', '__all__']
@@ -51,8 +51,6 @@ Options:
 -h, --help        Display this help information
 -l, --log         Name of the logfile to write logging information to
 -d, --debug       Print debug messages as well as info and higher
--n, --no-restore  Do not restore copy commands that were in progress 
-                before the last shutdown
 """
     
     if exitCode is not None:
@@ -70,11 +68,10 @@ def parseOptions(args):
     # Default parameters
     config['logFilename'] = None
     config['debugMessages'] = False
-    config['restore'] = True
     
     # Read in and process the command line flags
     try:
-        opts, args = getopt.getopt(args, "hl:dn", ["help", "log=", "debug", "no-restore"])
+        opts, args = getopt.getopt(args, "hl:d", ["help", "log=", "debug"])
     except getopt.GetoptError, err:
         # Print help information and exit:
         print str(err) # will print something like "option -a not recognized"
@@ -88,8 +85,6 @@ def parseOptions(args):
             config['logFilename'] = value
         elif opt in ('-d', '--debug'):
             config['debugMessages'] = True
-        elif opt in ('-n', '--no-restore'):
-            config['restore'] = False
         else:
             assert False
     
@@ -511,16 +506,6 @@ def main(args):
     # Hook in the signal handler - SIGTERM
     signal.signal(signal.SIGTERM, HandleSignalExit)
     
-    # Restore the saved queue
-    if opts['restore']:
-        while lwaSC.currentState['status'] != 'NORMAL':
-            time.sleep(5)
-        lwaSC.loadQueuesFromFile('inProgress.queue')
-    try:
-        os.unlink('inProgress.queue')
-    except OSError:
-        pass
-        
     # Loop and process the MCS data packets as they come in - exit if ctrl-c is 
     # received
     logger.info('Ready to communicate')
@@ -564,9 +549,6 @@ def main(args):
     except NameError:
         pass
         
-    # Save the residual queues to a file
-    lwaSC.saveQueuesToFile('inProgress.queue', force=True)
-    
     # Exit
     logger.info('Finished')
     logging.shutdown()
