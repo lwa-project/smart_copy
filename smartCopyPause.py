@@ -1,75 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import print_function
+
 import os
 import sys
 import math
 import time
-import getopt
 import socket
+import argparse
 from datetime import datetime
 
 from zeroconf import Zeroconf
 
 
 SITE = socket.gethostname().split('-', 1)[0]
-
-
-def usage(exitCode=None):
-    print """smartCopyPause.py - Pause the copy processing queue on the specified DR
-
-Usage: smartCopyPause.py DR
-
-Options:
--h, --help        Display this help information
--a, --all         Pause copyies on all DRs
-"""
-
-    if exitCode is not None:
-        sys.exit(exitCode)
-    else:
-        return True
-
-
-def parseOptions(args):
-    """
-    Parse the command line options and return a dictionary of the configuration
-    """
-
-    config = {}
-    # Default parameters
-    config['version'] = False
-    config['all'] = False
-    config['args'] = []
-    
-    # Read in and process the command line flags
-    try:
-        opts, args = getopt.getopt(args, "hva", ["help", "version", "all"])
-    except getopt.GetoptError, err:
-        # Print help information and exit:
-        print str(err) # will print something like "option -a not recognized"
-        usage(exitCode=2)
-        
-    # Work through opts
-    for opt, value in opts:
-        if opt in ('-h', '--help'):
-            usage(exitCode=0)
-        elif opt in ('-v', '--version'):
-            config['version'] = True
-        elif opt in ('-a', '--all'):
-            config['all'] = True
-        else:
-            assert False
-    
-    # Add in arguments
-    config['args'] = args
-    
-    # Validate
-    if not config['all'] and len(config['args']) < 1:
-        raise RuntimeError("Must specified a DR")
-        
-    # Return configuration
-    return config
 
 
 # Maximum number of bytes to receive from MCS
@@ -140,18 +85,15 @@ def parsePayload(payload):
 
 
 def main(args):
-    # Parse the command line
-    config = parseOptions(args)
-    
     # Connect to the smart copy command server
     zeroconf = Zeroconf()
     zinfo = zeroconf.get_service_info("_sccs._udp.local.", "Smart copy server._sccs._udp.local.")
     if zinfo is None:
         raise RuntimeError("Cannot find the smart copy command server")
         
-    if config['version']:
+    if args.version:
         ## Smart copy command server info
-        print zinfo
+        print(zinfo)
         
     else:
         outHost = socket.inet_ntoa(zinfo.address)
@@ -168,7 +110,7 @@ def main(args):
         nDR = 3 if SITE == 'lwasv' else 5
         for i in xrange(1, nDR+1):
             dr = 'DR%i' % i
-            if config['all'] or dr in config['args']:
+            if args.all or dr in args.DR:
                 cmds.append( buildPayload(inHost, "PAU", data=dr) )
                 
         try:
@@ -185,11 +127,11 @@ def main(args):
                 cStatus, sStatus, info = parsePayload(data)
                 info = info.split('\n')
                 if len(info) == 1:
-                    print cStatus, sStatus, info[0]
+                    print(cStatus, sStatus, info[0])
                 else:
-                    print cStatus, sStatus
+                    print(cStatus, sStatus)
                     for line in info:
-                        print "  %s" % line
+                        print("  %s" % line)
                         
             sockIn.close()
             sockOut.close()
@@ -201,5 +143,26 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    def data_recorder(value):
+        value = value.upper()
+        if value[:2] != 'DR':
+            raise argparse.ArgumentError
+        try:
+            int(value[2:], 10)
+        except ValueError:
+            raise argparse.ArgumentError
+        return value
+        
+    parser = argparse.ArgumentParser(
+        description='Pause the processing queue on the specified DR',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+    parser.add_argument('DR', type=data_recorder, nargs='*',
+                        help='data recoder name')
+    parser.add_argument('-a', '--all', action='store_true',
+                        help='pause copies on all DRs')
+    parser.add_argument('-v', '--version', action='store_true', 
+                        help='display version information')
+    args = parser.parse_args()
+    main(args)
     

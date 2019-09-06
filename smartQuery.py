@@ -4,7 +4,9 @@
 from __future__ import print_function
 
 import os
+import re
 import sys
+import zmq
 import math
 import time
 import socket
@@ -12,9 +14,6 @@ import argparse
 from datetime import datetime
 
 from zeroconf import Zeroconf
-
-
-SITE = socket.gethostname().split('-', 1)[0]
 
 
 # Maximum number of bytes to receive from MCS
@@ -52,9 +51,13 @@ def getTime():
     return (mjd, mpm)
 
 
-def buildPayload(source, cmd, data=None):
-    ref = 1
-    
+def buildPayload(source, cmd, data=None, refSocket=None):
+    if refSocket is None:
+        ref = 1
+    else:
+        refSocket.send(b"next_ref")
+        ref = int(refSocket.recv(), 10)
+        
     mjd, mpm = getTime()
     
     payload = ''
@@ -105,14 +108,18 @@ def main(args):
         while len(inHost) < 3:
             inHost += "_"
         inPort = int(zinfo.properties['MESSAGEOUTPORT'], 10)
+        refPort = int(zinfo.properties['MESSAGEREFPORT'], 10)
         
+        context = zmq.Context()
+        sockRef = context.socket(zmq.REQ)
+        sockRef.connect("tcp://%s:%i" % (outHost, refPort))
+        
+        infs = []
         cmds = []
-        nDR = 3 if SITE == 'lwasv' else 5
-        for i in xrange(1, nDR+1):
-            dr = 'DR%i' % i
-            if args.all or dr in args.DR:
-                cmds.append( buildPayload(inHost, "RES", data=dr) )
-                
+        for query in args.query:
+            infs.append( "Querying '%s'" % query )
+            cmds.append( buildPayload(inHost, 'RPT', data=query, refSocket=sockRef) )
+            
         try:
             sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sockOut.settimeout(5)
@@ -120,7 +127,9 @@ def main(args):
             sockIn.bind(("0.0.0.0", inPort))
             sockIn.settimeout(5)
             
-            for cmd in cmds:
+            for inf,cmd in zip(infs,cmds):
+                print(inf)
+                
                 sockOut.sendto(cmd, (outHost, outPort))
                 data, address = sockIn.recvfrom(MCS_RCV_BYTES)
                 
@@ -138,29 +147,35 @@ def main(args):
         except socket.error as e:
             raise RuntimeError(str(e))
             
+        sockRef.close()
+        context.term()
+        
     zeroconf.close()
     time.sleep(0.1)
 
 
 if __name__ == "__main__":
-    def data_recorder(value):
-        value = value.upper()
-        if value[:2] != 'DR':
+    def mib(value):
+        _queryRE = re.compile(r'(?P<name>[A-Z_]+)(?P<number>\d+)')
+        _valid_names = ['OBSSTATUS_DR', 'QUEUE_SIZE_DR', 'QUEUE_STATUS_DR',
+                        'QUEUE_ENTRY', 'ACTIVE_ID_DR', 'ACTIVE_STATUS_DR',
+                        'ACTIVE_BYTES_DR', 'ACTIVE_PROGRESS_DR', 
+                        'ACTIVE_SPEED_DR', 'ACTIVE_REMAINING_DR']
+        mtch = _queryRE.match(value)
+        if mtch is None:
             raise argparse.ArgumentError
-        try:
-            int(value[2:], 10)
-        except ValueError:
-            raise argparse.ArgumentError
+        else:
+            if mtch.group('name') not in _valid_names:
+                raise argparse.ArgumentError
         return value
         
     parser = argparse.ArgumentParser(
-        description='Resume the processing queue on the specified DR',
+        description='Query the smart copy server about its state',
+        epilog='Valid MIB entries are: OBSSTATUS_DR# - whether or not DR# is recording data, QUEUE_SIZE_DR# - size of the copy queue on DR#, QUEUE_STATUS_DR# - status of the copy queue on DR#, QUEUE_ENTRY_# - details of a copy command entry, ACTIVE_ID_DR# - active copy command queue ID on DR#, ACTIVE_STATUS_DR# - active copy command status/command on DR#, ACTIVE_BYTES_DR# - active copy bytes transferred on DR#, ACTIVE_PROGRESS_DR# - active copy progress on DR#, ACTIVE_SPEED_DR#- active copy speed on DR#, and ACTIVE_REMAINING_DR# - active copy time remaining on DR#.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
         )
-    parser.add_argument('DR', type=data_recorder, nargs='*',
-                        help='data recoder name')
-    parser.add_argument('-a', '--all', action='store_true',
-                        help='resume copies on all DRs')
+    parser.add_argument('query', type=mib, nargs='+',
+                        help='MIB to query')
     parser.add_argument('-v', '--version', action='store_true', 
                         help='display version information')
     args = parser.parse_args()

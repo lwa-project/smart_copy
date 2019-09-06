@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import print_function
+
 import os
 import re
 import sys
 import zmq
 import math
 import time
-import getopt
 import socket
+import argparse
 import subprocess
 from datetime import datetime
 
@@ -26,92 +28,6 @@ SITE = socket.gethostname().split('-', 1)[0]
 
 
 _usernameRE = re.compile(r'ucfuser:[ \t]*(?P<username>[a-zA-Z1]+)(\/(?P<subdir>[a-zA-Z0-9\/\+\-_]+))?')
-
-
-def usage(exitCode=None):
-    print """smartDeleteHelper.py - Parse a metadata file and queue the data deletion for later
-
-Usage: smartDeleteHelper.py [OPTIONS] metadata [metadata [...]]
-
-Options:
--h, --help         Display this help information
--v, --version      Display version information
--o, --obsevations  Comma separated list of obseration numbers to transfer
-                (one based; default = -1 = tranfer all obserations)
--n, --now          Request that the delete(s) be executed as soon as the 
-                command(s) reach the front of the queue (default = no,
-                queue for batch delete
--q, --query        Query the smart copy server
-
-Note:
-  For -q/--query calls, valid MIB entries are:
-    OBSSTATUS_DR# - whether or not DR# is recording data
-    
-    QUEUE_SIZE_DR# - size of the copy queue on DR#
-    QUEUE_STATUS_DR# - status of the copy queue on DR#
-    QUEUE_ENTRY_# - details of a copy command entry
-    
-    ACTIVE_ID_DR# - active copy command queue ID on DR#
-    ACTIVE_STATUS_DR# - active copy command status/command on DR#
-    ACTIVE_BYTES_DR# - active copy bytes transferred on DR#
-    ACTIVE_PROGRESS_DR# - active copy progress on DR#
-    ACTIVE_SPEED_DR#- active copy speed on DR#
-    ACTIVE_REMAINING_DR# - active copy time remaining on DR#
-"""
-
-    if exitCode is not None:
-        sys.exit(exitCode)
-    else:
-        return True
-
-
-def parseOptions(args):
-    """
-    Parse the command line options and return a dictionary of the configuration
-    """
-
-    config = {}
-    # Default parameters
-    config['version'] = False
-    config['obsID'] = -1
-    config['now'] = False
-    config['query'] = False
-    config['args'] = []
-    
-    # Read in and process the command line flags
-    try:
-        opts, args = getopt.getopt(args, "hvo:nq", ["help", "version", "observations=", "now", "query"])
-    except getopt.GetoptError, err:
-        # Print help information and exit:
-        print str(err) # will print something like "option -a not recognized"
-        usage(exitCode=2)
-        
-    # Work through opts
-    for opt, value in opts:
-        if opt in ('-h', '--help'):
-            usage(exitCode=0)
-        elif opt in ('-v', '--version'):
-            config['version'] = True
-        elif opt in ('-o', '--observations'):
-            config['obsID'] = [int(v,10)-1 for v in value.split(',')]
-        elif opt in ('-n', '--now'):
-            config['now'] = True
-        elif opt in ('-q', '--query'):
-            config['query'] = True
-        else:
-            assert False
-    
-    # Add in arguments
-    config['args'] = args
-    
-    # Validate
-    if config['query'] and len(config['args']) != 1:
-        raise RuntimeError("Only one argument is allowed for query operations")
-    if not config['query'] and not config['version'] and len(config['args']) < 1:
-        raise RuntimeError("Must specify at least one metadata file")
-        
-    # Return configuration
-    return config
 
 
 def parseMetadata(tarname):
@@ -260,9 +176,6 @@ def parsePayload(payload):
 
 
 def main(args):
-    # Parse the command line
-    config = parseOptions(args)
-    
     # Connect to the smart copy command server
     zeroconf = Zeroconf()
     tPoll = time.time()
@@ -273,9 +186,9 @@ def main(args):
     if zinfo is None:
         raise RuntimeError("Cannot find the smart copy command server")
         
-    if config['version']:
+    if args.version:
         ## Smart copy command server info
-        print zinfo
+        print(zinfo)
         
     else:
         outHost = socket.inet_ntoa(zinfo.address)
@@ -295,78 +208,72 @@ def main(args):
         
         infs = []
         cmds = []
-        if config['query']:
-            infs.append( "Querying '%s'" % config['args'][0] )
-            cmds.append( buildPayload(inHost, 'RPT', data=config['args'][0], refSocket=sockRef) )
-            
-        else:
-            filenames = config['args']
-            
-            # Process the input files
-            for filename in filenames:
-                ## Parse the metadata
-                try:
-                    filetags, barcodes, beam, date, isSpec, origPath = parseMetadata(filename)
-                except KeyError:
-                    print "WARNING: could not parse '%s', skipping" % os.path.basename(filename)
+        # Process the input files
+        for filename in args.filename:
+            ## Parse the metadata
+            try:
+                filetags, barcodes, beam, date, isSpec, origPath = parseMetadata(filename)
+            except KeyError:
+                print("WARNING: could not parse '%s', skipping" % os.path.basename(filename))
+                continue
+                
+            ## Go!
+            inHost = "DR%i" % beam
+            _drPathCache = {}
+            _done = []
+            for oid,(filetag,barcode) in enumerate(zip(filetags, barcodes)):
+                ### Make sure we have a valid tag
+                if filetag in ('', 'UNK'):
+                    print("WARNING: invalid filetag '%s' for observation %i of '%s', skipping" % (filetag, oid+1, filename))
                     continue
                     
-                ## Go!
-                inHost = "DR%i" % beam
-                _drPathCache = {}
-                _done = []
-                for oid,(filetag,barcode) in enumerate(zip(filetags, barcodes)):
-                    ### Make sure we have a valid tag
-                    if filetag in ('', 'UNK'):
-                        print "WARNING: invalid filetag '%s' for observation %i of '%s', skipping" % (filetag, oid+1, filename)
+                ### See if we should transfer this file
+                if len(args.observations) > 0:
+                    if oid not in args.observations:
                         continue
                         
-                    ### See if we should transfer this file
-                    if config['obsID'] != -1:
-                        if oid not in config['obsID']:
-                            continue
-                            
-                    ### See if we have already transferred this file
-                    if filetag in _done:
-                        continue
-                        
-                    ### Get the path on the DR
-                    try:
-                        drPath = _drPathCache[(beam,barcode)]
-                    except KeyError:
-                        _drPathCache[(beam,barcode)] = getDRSUPath(beam, barcode)
-                        drPath = _drPathCache[(beam,barcode)]
-                        
-                    ### Make the delete
-                    if drPath is None:
-                        print "WARNING: could not find path for DRSU '%s' on DR%i, skipping" % (barcode, beam)
-                        continue
-                        
-                    srcPath= "%s:%s/DROS/%s/%s" % (inHost, drPath, 'Spec' if isSpec else 'Rec', filetag)
+                ### See if we have already transferred this file
+                if filetag in _done:
+                    continue
                     
-                    yesno = raw_input("remove %s? " % srcPath)
-                    if yesno.lower() not in ('y', 'yes'):
-                        ### Update the done list
-                        _done.append( filetag )
-                        continue
-                        
-                    try:
-                        host, hostpath = srcPath.split(':', 1)
-                    except ValueError:
-                        host, hostpath = '', srcPath
-                    if host == '':
-                        host = inHost
-                        hostpath = os.path.abspath(hostpath)
-                        
-                    flag = ''
-                    if config['now']:
-                        flag = '-tNOW '
-                        
-                    infs.append( "Queuing delete for %s:%s " % (host, hostpath) )
-                    cmds.append( buildPayload(inHost, "SRM", data="%s%s:%s" % (flag, host, hostpath), refSocket=sockRef) )
+                ### Get the path on the DR
+                try:
+                    drPath = _drPathCache[(beam,barcode)]
+                except KeyError:
+                    _drPathCache[(beam,barcode)] = getDRSUPath(beam, barcode)
+                    drPath = _drPathCache[(beam,barcode)]
                     
+                ### Make the delete
+                if drPath is None:
+                    print("WARNING: could not find path for DRSU '%s' on DR%i, skipping" % (barcode, beam))
+                    continue
+                    
+                srcPath= "%s:%s/DROS/%s/%s" % (inHost, drPath, 'Spec' if isSpec else 'Rec', filetag)
+                
+                yesno = raw_input("remove %s? " % srcPath)
+                if yesno.lower() not in ('y', 'yes'):
                     ### Update the done list
                     _done.append( filetag )
+                    continue
+                    
+                try:
+                    host, hostpath = srcPath.split(':', 1)
+                except ValueError:
+                    host, hostpath = '', srcPath
+                if host == '':
+                    host = inHost
+                    hostpath = os.path.abspath(hostpath)
+                    
+                flag = ''
+                if args.now:
+                    flag = '-tNOW '
+                    
+                infs.append( "Queuing delete for %s:%s " % (host, hostpath) )
+                cmds.append( buildPayload(inHost, "SRM", data="%s%s:%s" % (flag, host, hostpath), refSocket=sockRef) )
+                
+                ### Update the done list
+                _done.append( filetag )
+                
         try:
             sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sockOut.settimeout(5)
@@ -375,7 +282,7 @@ def main(args):
             sockIn.settimeout(5)
             
             for inf,cmd in zip(infs,cmds):
-                print inf
+                print(inf)
                 
                 sockOut.sendto(cmd, (outHost, outPort))
                 data, address = sockIn.recvfrom(MCS_RCV_BYTES)
@@ -383,11 +290,11 @@ def main(args):
                 cStatus, sStatus, info = parsePayload(data)
                 info = info.split('\n')
                 if len(info) == 1:
-                    print cStatus, sStatus, info[0]
+                    print(cStatus, sStatus, info[0])
                 else:
-                    print cStatus, sStatus
+                    print(cStatus, sStatus)
                     for line in info:
-                        print "  %s" % line
+                        print("  %s" % line)
                         
             sockIn.close()
             sockOut.close()
@@ -402,5 +309,22 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    parser = argparse.ArgumentParser(
+        description='Parse a metadata file and queue the data deletion for later.',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+    parser.add_argument('filename', type=str, nargs='+',
+                        help='metadata to examine')
+    parser.add_argument('-v', '--version', action='store_true', 
+                        help='display version information')
+    parser.add_argument('-o', '--observations', type=str, default='-1',
+                        help='comma separated list of obseration numbers to transfer (one based; -1 = tranfer all obserations)')
+    parser.add_argument('-n', '--now', action='store_true',
+                        help='request that the delete(s) be executed as soon as the command(s) reach the front of the queue')
+    args = parser.parse_args()
+    if args.observations == '-1':
+        args.observations = []
+    else:
+        args.observations = [int(v,10)-1 for v in args.observations.split(',')]
+    main(args)
     

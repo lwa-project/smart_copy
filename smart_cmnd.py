@@ -1,16 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import print_function
+
 import os
 import sys
 import time
-import getopt
 import signal
 import socket
 import string
 import struct
 import thread
 import logging
+import argparse
 try:
     from logging.handlers import WatchedFileHandler
 except ImportError:
@@ -40,59 +42,6 @@ SITE = socket.gethostname().split('-', 1)[0]
 # Default Configuration File
 #
 DEFAULTS_FILENAME = '/lwa/software/defaults.cfg'
-
-
-def usage(exitCode=None):
-    print """smart_cmnd.py - Control the data copies around the station.
-
-Usage: smart_cmnd.py [OPTIONS]
-
-Options:
--h, --help        Display this help information
--l, --log         Name of the logfile to write logging information to
--d, --debug       Print debug messages as well as info and higher
-"""
-    
-    if exitCode is not None:
-        sys.exit(exitCode)
-    else:
-        return True
-
-
-def parseOptions(args):
-    """
-    Parse the command line options and return a dictionary of the configuration
-    """
-
-    config = {}
-    # Default parameters
-    config['logFilename'] = None
-    config['debugMessages'] = False
-    
-    # Read in and process the command line flags
-    try:
-        opts, args = getopt.getopt(args, "hl:d", ["help", "log=", "debug"])
-    except getopt.GetoptError, err:
-        # Print help information and exit:
-        print str(err) # will print something like "option -a not recognized"
-        usage(exitCode=2)
-        
-    # Work through opts
-    for opt, value in opts:
-        if opt in ('-h', '--help'):
-            usage(exitCode=0)
-        elif opt in ('-l', '--log'):
-            config['logFilename'] = value
-        elif opt in ('-d', '--debug'):
-            config['debugMessages'] = True
-        else:
-            assert False
-    
-    # Add in arguments
-    config['args'] = args
-
-    # Return configuration
-    return config
 
 
 class MCSCommunicate(Communicate):
@@ -409,20 +358,17 @@ def main(args):
     and start the UDP command handler.
     """
     
-    # Parse command line options
-    opts = parseOptions(args)
-    
     # Setup logging
     logger = logging.getLogger(__name__)
     logFormat = logging.Formatter('%(asctime)s [%(levelname)-8s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     logFormat.converter = time.gmtime
-    if opts['logFilename'] is None:
+    if args.log is None:
         logHandler = logging.StreamHandler(sys.stdout)
     else:
-        logHandler = WatchedFileHandler(opts['logFilename'])
+        logHandler = WatchedFileHandler(args.log)
     logHandler.setFormatter(logFormat)
     logger.addHandler(logHandler)
-    if opts['debugMessages']:
+    if args.debug:
         logger.setLevel(logging.DEBUG)
     else:
         logger.setLevel(logging.INFO)
@@ -474,7 +420,7 @@ def main(args):
     refServer = ReferenceServer(config['MESSAGEREFPORT'])
     refServer.start()
     ## MCS server
-    mcsComms = MCSCommunicate(lwaSC, config, opts)
+    mcsComms = MCSCommunicate(lwaSC, config, args)
     mcsComms.start()
     
     # Initialize the copy manager
@@ -533,7 +479,7 @@ def main(args):
     # If we've made it this far, we have finished so shutdown SmartCopy and close the 
     # communications channels
     tStop = time.time()
-    print '\nShutting down SmartCopy, please wait...'
+    print('\nShutting down SmartCopy, please wait...')
     logger.info('Shutting down SmartCopy, please wait...')
     lwaSC.sht()
     while lwaSC.currentState['info'] != 'System has been shut down':
@@ -556,5 +502,14 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    parser = argparse.ArgumentParser(
+        description='control the data copies around the station',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+    parser.add_argument('-l', '--log', type=str, 
+                        help='name of the logfile to write logging information to')
+    parser.add_argument('-d', '--debug', action='store_true',
+                        help='print debug messages as well as info and higher')
+    args = parser.parse_args()
+    main(args)
     

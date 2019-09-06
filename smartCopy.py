@@ -1,94 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import print_function
+
 import os
+import re
 import sys
 import zmq
 import math
 import time
-import getopt
 import socket
+import argparse
 from datetime import datetime
 
 from zeroconf import Zeroconf
-
-
-def usage(exitCode=None):
-    print """smartCopy.py - Queue a file copy for later.
-
-Usage: smartCopy.py source [source [...]] destination
-
-Where: source and destination can either be a file path or host:path 
-    combination a la rsync
-
-Options:
--h, --help        Display this help information
--v, --version     Display version information
--q, --query       Query the smart copy server
-
-Note:
-  For -q/--query calls, valid MIB entries are:
-    OBSSTATUS_DR# - whether or not DR# is recording data
-    
-    QUEUE_SIZE_DR# - size of the copy queue on DR#
-    QUEUE_STATUS_DR# - status of the copy queue on DR#
-    QUEUE_ENTRY_# - details of a copy command entry
-    
-    ACTIVE_ID_DR# - active copy command queue ID on DR#
-    ACTIVE_STATUS_DR# - active copy command status/command on DR#
-    ACTIVE_BYTES_DR# - active copy bytes transferred on DR#
-    ACTIVE_PROGRESS_DR# - active copy progress on DR#
-    ACTIVE_SPEED_DR#- active copy speed on DR#
-    ACTIVE_REMAINING_DR# - active copy time remaining on DR#
-"""
-
-    if exitCode is not None:
-        sys.exit(exitCode)
-    else:
-        return True
-
-
-def parseOptions(args):
-    """
-    Parse the command line options and return a dictionary of the configuration
-    """
-
-    config = {}
-    # Default parameters
-    config['version'] = False
-    config['query'] = False
-    config['args'] = []
-    
-    # Read in and process the command line flags
-    try:
-        opts, args = getopt.getopt(args, "hvq", ["help", "version", "query"])
-    except getopt.GetoptError, err:
-        # Print help information and exit:
-        print str(err) # will print something like "option -a not recognized"
-        usage(exitCode=2)
-        
-    # Work through opts
-    for opt, value in opts:
-        if opt in ('-h', '--help'):
-            usage(exitCode=0)
-        elif opt in ('-v', '--version'):
-            config['version'] = True
-        elif opt in ('-q', '--query'):
-            config['query'] = True
-        else:
-            assert False
-    
-    # Add in arguments
-    config['args'] = args
-    
-    # Validate
-    if config['query'] and len(config['args']) != 1:
-        raise RuntimeError("Only one argument is allowed for query operations")
-    if not config['query'] and not config['version'] and len(config['args']) < 2:
-        raise RuntimeError("Must specify both a source and destination for the copy")
-        
-    # Return configuration
-    return config
 
 
 # Maximum number of bytes to receive from MCS
@@ -163,18 +88,15 @@ def parsePayload(payload):
 
 
 def main(args):
-    # Parse the command line
-    config = parseOptions(args)
-    
     # Connect to the smart copy command server
     zeroconf = Zeroconf()
     zinfo = zeroconf.get_service_info("_sccs._udp.local.", "Smart copy server._sccs._udp.local.")
     if zinfo is None:
         raise RuntimeError("Cannot find the smart copy command server")
         
-    if config['version']:
+    if args.version:
         ## Smart copy command server info
-        print zinfo
+        print(zinfo)
         
     else:
         outHost = socket.inet_ntoa(zinfo.address)
@@ -194,33 +116,26 @@ def main(args):
         
         infs = []
         cmds = []
-        if config['query']:
-            infs.append( "Querying '%s'" % config['args'][0] )
-            cmds.append( buildPayload(inHost, 'RPT', data=config['args'][0], refSocket=sockRef) )
-            
-        else:
-            srcPaths = config['args'][:-1]
-            destPath = config['args'][-1]
-            
-            for srcPath in srcPaths:
-                try:
-                    host, hostpath = srcPath.split(':', 1)
-                except ValueError:
-                    host, hostpath = '', srcPath
-                if host == '':
-                    host = inHost
-                    hostpath = os.path.abspath(hostpath)
-                    
-                try:
-                    dest, destpath = destPath.split(':', 1)
-                except ValueError:
-                    dest, destpath = '', destPath
-                if dest == '':
-                    dest = inHost
-                    destpath = os.path.abspath(destpath)
-                    
-                infs.append( "Queuing copy for %s:%s to %s:%s" % (host, hostpath, dest, destpath) )
-                cmds.append( buildPayload(inHost, "SCP", data="%s:%s->%s:%s" % (host, hostpath, dest, destpath), refSocket=sockRef) )
+        destPath = args.destination[0]
+        for srcPath in args.source:
+            try:
+                host, hostpath = srcPath.split(':', 1)
+            except ValueError:
+                host, hostpath = '', srcPath
+            if host == '':
+                host = inHost
+                hostpath = os.path.abspath(hostpath)
+                
+            try:
+                dest, destpath = destPath.split(':', 1)
+            except ValueError:
+                dest, destpath = '', destPath
+            if dest == '':
+                dest = inHost
+                destpath = os.path.abspath(destpath)
+                
+            infs.append( "Queuing copy for %s:%s to %s:%s" % (host, hostpath, dest, destpath) )
+            cmds.append( buildPayload(inHost, "SCP", data="%s:%s->%s:%s" % (host, hostpath, dest, destpath), refSocket=sockRef) )
             
         try:
             sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -230,7 +145,7 @@ def main(args):
             sockIn.settimeout(5)
             
             for inf,cmd in zip(infs,cmds):
-                print inf
+                print(inf)
                 
                 sockOut.sendto(cmd, (outHost, outPort))
                 data, address = sockIn.recvfrom(MCS_RCV_BYTES)
@@ -238,11 +153,11 @@ def main(args):
                 cStatus, sStatus, info = parsePayload(data)
                 info = info.split('\n')
                 if len(info) == 1:
-                    print cStatus, sStatus, info[0]
+                    print(cStatus, sStatus, info[0])
                 else:
-                    print cStatus, sStatus
+                    print(cStatus, sStatus)
                     for line in info:
-                        print "  %s" % line
+                        print("  %s" % line)
                         
             sockIn.close()
             sockOut.close()
@@ -257,5 +172,16 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    parser = argparse.ArgumentParser(
+        description='Queue a file copy for later.',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+    parser.add_argument('source', type=str, nargs='+',
+                        help='filename to copy')
+    parser.add_argument('destination', type=str, nargs=1,
+                        help='destination to copy to')
+    parser.add_argument('-v', '--version', action='store_true', 
+                        help='display version information')
+    args = parser.parse_args()
+    main(args)
     
