@@ -385,7 +385,7 @@ class ManageDR(object):
                         task = self.queue.get(False, 5)
                         if task is not None:
                             ### Make sure the task hasn't been canceled
-                            if self.results[task[-1]] != 'canceled':
+                            if self.results[task[4]] != 'canceled':
                                 ### Check if this task has been re-queued because of an error.
                                 ### If so, make sure that we haven't tried it again in at 
                                 ### least a day.
