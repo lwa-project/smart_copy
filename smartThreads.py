@@ -242,7 +242,10 @@ class ManageDR(object):
         
         # Results cache
         self.results = LimitedSizeDict(size_limit=512)
-        
+        for entry in self.queue.restored:
+            host, hostpath, dest, destpath, id, retries, lasttry = entry
+            self.results[id] = 'queued for %s:%s -> %s:%s' % (host, hostpath, dest, destpath)
+            
     def start(self):
         """
         Start the station monitoring thread.

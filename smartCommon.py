@@ -100,6 +100,7 @@ class DiskBackedQueue(Queue.Queue):
         Queue.Queue.__init__(self, maxsize=maxsize)
         
         # See if we need to restore from disk
+        self.restored = []
         with self._lock:
             if restore:
                 if os.path.exists(self._filename):
@@ -111,6 +112,7 @@ class DiskBackedQueue(Queue.Queue):
                             try:
                                 item = pickle.loads(entry)
                                 Queue.Queue.put(self, item)
+                                self.restored.append(item)
                             except Exception as e:
                                 warnings.warn("Failed to load entry %i of '%s': %s" \
                                               % (i, os.path.basename(self._filename), str(e)),
