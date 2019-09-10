@@ -228,7 +228,7 @@ class ManageDR(object):
         self.dr = dr
         self.SCCallbackInstance = SCCallbackInstance
         
-        self.queue = DiskBackedQueue('.DR%i.queue' % self.dr, restore=True)
+        self.queue = DiskBackedQueue('.%s.queue' % self.dr, restore=True)
         
         # Setup threading
         self.thread = None
