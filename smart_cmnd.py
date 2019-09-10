@@ -10,7 +10,6 @@ import signal
 import socket
 import string
 import struct
-import thread
 import logging
 import argparse
 try:

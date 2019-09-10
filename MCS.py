@@ -17,7 +17,6 @@ import math
 import time
 import socket
 import string
-import thread
 import logging
 import threading
 import traceback
@@ -112,7 +111,8 @@ class Communicate(object):
         self.queueOut = deque()
         
         # Start the packet processing thread
-        thread.start_new_thread(self.packetProcessor, ())
+        op = threading.Thread(target=self.packetProcessor)
+        op.start()
         
         # Setup the various sockets
         ## Receive
