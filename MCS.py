@@ -120,7 +120,7 @@ class Communicate(object):
             self.socketIn =  socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.socketIn.bind(("0.0.0.0", self.config['MESSAGEINPORT']))
             #self.socketIn.setblocking(0)
-        except socket.error, err:
+        except socket.error as err:
             code, e = err
             self.logger.critical('Cannot bind to listening port %i: %s', self.config['MESSAGEINPORT'], str(e))
             self.logger.critical('Exiting on previous error')
@@ -132,7 +132,7 @@ class Communicate(object):
             self.socketOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.destAddress = (self.config['MESSAGEOUTHOST'], self.config['MESSAGEOUTPORT'])
             #self.socketIn.setblocking(0)
-        except socket.error, err:
+        except socket.error as err:
             code, e = err
             self.logger.critical('Cannot bind to sending port %i: %s', self.config['MESSAGEOUTPORT'], str(e))
             self.logger.critical('Exiting on previous error')
@@ -189,7 +189,7 @@ class Communicate(object):
                         if not success:
                             self.queueOut.appendleft( (sender, status, command, reference, packed_data, address) )
                             
-                except Exception, e:
+                except Exception as e:
                     exc_type, exc_value, exc_traceback = sys.exc_info()
                     self.logger.error("packetProcessor failed with: %s at line %i", str(e), traceback.tb_lineno(exc_traceback))
                         
@@ -214,7 +214,7 @@ class Communicate(object):
                         self.queueOut.appendleft( (sender, status, command, reference, packed_data, address) )
                         time.sleep(0.001)
                         
-                except Exception, e:
+                except Exception as e:
                     exc_type, exc_value, exc_traceback = sys.exc_info()
                     logger.error("packetProcessor failed with: %s at line %i", str(e), traceback.tb_lineno(exc_traceback))
                         
