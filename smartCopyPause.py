@@ -108,7 +108,7 @@ def main(args):
         
         cmds = []
         nDR = 3 if SITE == 'lwasv' else 5
-        for i in xrange(1, nDR+1):
+        for i in range(1, nDR+1):
             dr = 'DR%i' % i
             if args.all or dr in args.DR:
                 cmds.append( buildPayload(inHost, "PAU", data=dr) )

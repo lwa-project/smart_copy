@@ -5,7 +5,10 @@ import re
 import sys
 import time
 import uuid
-import Queue
+try:
+    import Queue
+except ImportError:
+    import queue as Queue
 import select
 import pickle
 import warnings
@@ -16,7 +19,7 @@ import logging
 try:
     import cStringIO as StringIO
 except ImportError:
-    import StringIO
+    from io import StringIO
 from socket import gethostname
 
 from collections import OrderedDict
@@ -237,6 +240,10 @@ class InterruptibleCopy(object):
                 
             try:
                 output = subprocess.check_output(cmd)
+                try:
+                    output = output.decode('ascii')
+                except AttributeError:
+                    pass
                 self._size = output.split(None, 1)[0]
             except subprocess.CalledProcessError:
                 self._size = '0'
@@ -523,7 +530,12 @@ class InterruptibleCopy(object):
             while watchOut.poll(1):
                 if self.process.poll() is None:
                     try:
-                        stdout += self.process.stdout.read(1)
+                        new_text = self.process.stdout.read(1)
+                        try:
+                            new_text = new_text.decode('ascii')
+                        except AttributeError:
+                            pass
+                        stdout += new_text
                     except ValueError:
                         break
                 else:
@@ -594,7 +606,12 @@ class InterruptibleCopy(object):
             while watchOut.poll(1):
                 if self.process.poll() is None:
                     try:
-                        stdout += self.process.stdout.read(1)
+                        new_text = self.process.stdout.read(1)
+                        try:
+                            new_text = new_text.decode('ascii')
+                        except AttributeError:
+                            pass
+                        stdout += new_text
                     except ValueError:
                         break
                 else:

@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 import os
 import time
-import Queue
 import shutil
 import struct
 import logging
 import threading
-import subprocess
 from socket import gethostname
 
 from smartThreads import *

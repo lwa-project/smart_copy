@@ -5,7 +5,10 @@ import sys
 import copy
 import time
 import uuid
-import Queue
+try:
+    import Queue
+except ImportError:
+    import queue as Queue
 import select
 import socket
 import threading
@@ -15,7 +18,7 @@ import logging
 try:
     import cStringIO as StringIO
 except ImportError:
-    import StringIO
+    from io import StringIO
 
 from smartCommon import *
 
@@ -50,7 +53,7 @@ class MonitorStation(object):
         # Setup the data recorder busy list
         self.busy = {}
         nDR = 3 if SITE == 'lwasv' else 5
-        for i in xrange(1, nDR+1):
+        for i in range(1, nDR+1):
             self.busy['DR%i' % i] = True
             
         # Setup the MCS command queue state
@@ -103,6 +106,10 @@ class MonitorStation(object):
         # Walk through the lines
         for line in lines:
             ## Parse the line
+            try:
+                line = line.decode('ascii')
+            except AttributeError:
+                pass
             fields = line.split(None, 9)
             try:
                 rid = int(fields[5], 10)			# MCS reference ID
@@ -187,7 +194,7 @@ class MonitorStation(object):
                                 
             except Exception as e:
                 exc_type, exc_value, exc_traceback = sys.exc_info()
-                smartThreadsLogger.error("MonitorStation: pollStation failed with: %s at line %i", str(e), traceback.tb_lineno(exc_traceback))
+                smartThreadsLogger.error("MonitorStation: pollStation failed with: %s at line %i", str(e), exc_traceback.tb_lineno)
                 
                 ## Grab the full traceback and save it to a string via StringIO
                 fileObject = StringIO.StringIO()
@@ -424,7 +431,7 @@ class ManageDR(object):
                         
             except Exception as e:
                 exc_type, exc_value, exc_traceback = sys.exc_info()
-                smartThreadsLogger.error("ManageDR: processQueue failed with: %s at line %i", str(e), traceback.tb_lineno(exc_traceback))
+                smartThreadsLogger.error("ManageDR: processQueue failed with: %s at line %i", str(e), exc_traceback.tb_lineno)
                 
                 ## Grab the full traceback and save it to a string via StringIO
                 fileObject = StringIO.StringIO()
@@ -579,7 +586,12 @@ class ManageDR(object):
         
         # Get how many lines are in the logfile
         try:
-            totalSize = int(subprocess.check_output(['awk', "{sum+=$1} END {print sum}", logname]), 10)
+            totalSize = subprocess.check_output(['awk', "{sum+=$1} END {print sum}", logname])
+            try:
+                totalSize = totalSize.decode('ascii')
+            except AttributeError:
+                pass
+            totalSize = int(totalSize, 10)
         except (subprocess.CalledProcessError, ValueError):
             totalSize = 0
             

@@ -91,6 +91,10 @@ def getDRSUPath(beam, barcode):
         p.wait()
         
         for line in iter(p.stdout.readline, ''):
+            try:
+                line = line.decode('ascii')
+            except AttributeError:
+                pass
             line = line.split()
             try:
                 if line[6]==("['%s']" % (barcode)):

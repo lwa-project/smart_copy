@@ -22,9 +22,9 @@ import threading
 import traceback
 
 try:
-        import cStringIO as StringIO
+    import cStringIO as StringIO
 except ImportError:
-        import StringIO
+    from io import StringIO
         
 from datetime import datetime
 from collections import deque
@@ -281,7 +281,11 @@ class Communicate(object):
         """
         
         data, address = data
-        
+        try:
+            data = data.decode('ascii')
+        except AttributeError:
+            pass
+            
         destination = data[:3]
         sender      = data[3:6]
         command     = data[6:9]
