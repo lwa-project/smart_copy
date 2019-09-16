@@ -140,6 +140,10 @@ def main(args):
             sockOut.sendto(cmd, (outHost, outPort))
             data, address = sockIn.recvfrom(MCS_RCV_BYTES)
             
+            try:
+                data = data.decode('ascii')
+            except AttributeError:
+                pass
             cStatus, sStatus, info = parsePayload(data)
             info = info.split('\n')
             if len(info) == 1:
