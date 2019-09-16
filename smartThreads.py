@@ -343,6 +343,8 @@ class ManageDR(object):
                     else:
                         ### Yes, save the output
                         self.results[self.active.id] = self.active.status
+                        ### Let the queue know that we've done something with it
+                        self.queue.task_done()
                         ### Was it a successful copy?
                         if self.active.isSuccessful():
                             ## Yes, save it to the 'completed' log
@@ -371,6 +373,7 @@ class ManageDR(object):
                                 fh = open('error_%s.log' % self.dr, 'a')
                                 fh.write('%s %s\n' % (fsize, self.active.hostpath))
                                 fh.close()
+                                
                             else:
                                 ### There's still a chance.  Stick it in again
                                 self.queue.put(self.active.getTaskSpecification())
@@ -380,9 +383,6 @@ class ManageDR(object):
                         if self.active.isRemote():
                             rcl.release()
                             
-                        ### Let the queue know that we've done something with it
-                        self.queue.task_done()
-                        
                 if readyToProcess:
                     # Try to clean things up on the DR
                     if time.time() - tLastPurge > 86400:
