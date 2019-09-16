@@ -426,6 +426,10 @@ class ManageDR(object):
                                 self.active = InterruptibleCopy(*task)
                                 self.results[self.active.id] = 'active/started for %s:%s -> %s:%s' % (task[0], task[1], task[2], task[3])
                                 
+                            else:
+                                ### Yep, it's been canceled
+                                self.queue.task_done()
+                                
                     except Queue.Empty:
                         self.active = None
                         

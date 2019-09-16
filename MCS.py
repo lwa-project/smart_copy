@@ -249,10 +249,14 @@ class Communicate(object):
         systemStatus = self.SubSystemInstance.currentState['status']
 
         # Build the payload
-        payload = destination+sender+command+string.rjust(str(reference),9)
-        payload = payload + string.rjust(str(len(data)+8),4)+string.rjust(str(mjd),6)+string.rjust(str(mpm),9)+' '
-        payload = payload + response + string.rjust(str(systemStatus),7) + data
-    
+        payload = "%3s%3s%3s%9i" % (destination, sender, command, reference)
+        payload = payload + "%4i%6i%9i" % (len(data)+8, mjd, mpm)
+        payload = payload + ' ' + response + ("%7s" % systemStatus) + data
+        try:
+            payload = bytes(payload, 'ascii')
+        except TypeError:
+            pass
+            
         try:
             if address is None:
                 address = self.destAddress

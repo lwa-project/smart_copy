@@ -133,6 +133,10 @@ def main(args):
         for inf,cmd in zip(infs,cmds):
             print(inf)
             
+            try:
+                cmd = bytes(cmd, 'ascii')
+            except TypeError:
+                pass
             sockOut.sendto(cmd, (outHost, outPort))
             data, address = sockIn.recvfrom(MCS_RCV_BYTES)
             
