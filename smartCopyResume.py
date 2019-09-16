@@ -87,57 +87,69 @@ def parsePayload(payload):
 def main(args):
     # Connect to the smart copy command server
     zeroconf = Zeroconf()
+    tPoll = time.time()
     zinfo = zeroconf.get_service_info("_sccs._udp.local.", "Smart copy server._sccs._udp.local.")
+    while time.time() - tPoll <= 10.0 and zinfo is None:
+        time.sleep(1)
+        zinfo = zeroconf.get_service_info("_sccs._udp.local.", "Smart copy server._sccs._udp.local.")
     if zinfo is None:
         raise RuntimeError("Cannot find the smart copy command server")
         
-    if args.version:
-        ## Smart copy command server info
-        print(zinfo)
-        
-    else:
-        outHost = socket.inet_ntoa(zinfo.address)
-        outPort = zinfo.port
-        try:
-            inHost = socket.gethostname().split('-')[1].upper()
-        except IndexError:
-            inHost = socket.gethostname().upper()[:3]
-        while len(inHost) < 3:
-            inHost += "_"
+    outHost = socket.inet_ntoa(zinfo.address)
+    outPort = zinfo.port
+    try:
+        inHost = socket.gethostname().split('-')[1].upper()
+    except IndexError:
+        inHost = socket.gethostname().upper()[:3]
+    while len(inHost) < 3:
+        inHost += "_"
+    try:
         inPort = int(zinfo.properties['MESSAGEOUTPORT'], 10)
+        refPort = int(zinfo.properties['MESSAGEREFPORT'], 10)
+    except KeyError:
+        inPort = int(zinfo.properties[b'MESSAGEOUTPORT'], 10)
+        refPort = int(zinfo.properties[b'MESSAGEREFPORT'], 10)
         
-        cmds = []
-        nDR = 3 if SITE == 'lwasv' else 5
-        for i in range(1, nDR+1):
-            dr = 'DR%i' % i
-            if args.all or dr in args.DR:
-                cmds.append( buildPayload(inHost, "RES", data=dr) )
-                
-        try:
-            sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sockOut.settimeout(5)
-            sockIn  = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sockIn.bind(("0.0.0.0", inPort))
-            sockIn.settimeout(5)
+    cmds = []
+    nDR = 3 if SITE == 'lwasv' else 5
+    for i in range(1, nDR+1):
+        dr = 'DR%i' % i
+        if args.all or dr in args.DR:
+            cmds.append( buildPayload(inHost, "RES", data=dr) )
             
-            for cmd in cmds:
-                sockOut.sendto(cmd, (outHost, outPort))
-                data, address = sockIn.recvfrom(MCS_RCV_BYTES)
-                
-                cStatus, sStatus, info = parsePayload(data)
-                info = info.split('\n')
-                if len(info) == 1:
-                    print(cStatus, sStatus, info[0])
-                else:
-                    print(cStatus, sStatus)
-                    for line in info:
-                        print("  %s" % line)
-                        
-            sockIn.close()
-            sockOut.close()
-        except socket.error as e:
-            raise RuntimeError(str(e))
+    try:
+        sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sockOut.settimeout(5)
+        sockIn  = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sockIn.bind(("0.0.0.0", inPort))
+        sockIn.settimeout(5)
+        
+        for cmd in cmds:
+            try:
+                cmd = bytes(cmd, 'ascii')
+            except TypeError:
+                pass
+            sockOut.sendto(cmd, (outHost, outPort))
+            data, address = sockIn.recvfrom(MCS_RCV_BYTES)
             
+            try:
+                data = data.decode('ascii')
+            except AttributeError:
+                pass
+            cStatus, sStatus, info = parsePayload(data)
+            info = info.split('\n')
+            if len(info) == 1:
+                print(cStatus, sStatus, info[0])
+            else:
+                print(cStatus, sStatus)
+                for line in info:
+                    print("  %s" % line)
+                    
+        sockIn.close()
+        sockOut.close()
+    except socket.error as e:
+        raise RuntimeError(str(e))
+        
     zeroconf.close()
     time.sleep(0.1)
 
@@ -161,7 +173,7 @@ if __name__ == "__main__":
                         help='data recoder name')
     parser.add_argument('-a', '--all', action='store_true',
                         help='resume copies on all DRs')
-    parser.add_argument('-v', '--version', action='store_true', 
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s revision $Rev$', 
                         help='display version information')
     args = parser.parse_args()
     main(args)

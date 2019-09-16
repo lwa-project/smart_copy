@@ -190,124 +190,131 @@ def main(args):
     if zinfo is None:
         raise RuntimeError("Cannot find the smart copy command server")
         
-    if args.version:
-        ## Smart copy command server info
-        print(zinfo)
-        
-    else:
-        outHost = socket.inet_ntoa(zinfo.address)
-        outPort = zinfo.port
-        try:
-            inHost = socket.gethostname().split('-')[1].upper()
-        except IndexError:
-            inHost = socket.gethostname().upper()[:3]
-        while len(inHost) < 3:
-            inHost += "_"
+    outHost = socket.inet_ntoa(zinfo.address)
+    outPort = zinfo.port
+    try:
+        inHost = socket.gethostname().split('-')[1].upper()
+    except IndexError:
+        inHost = socket.gethostname().upper()[:3]
+    while len(inHost) < 3:
+        inHost += "_"
+    try:
         inPort = int(zinfo.properties['MESSAGEOUTPORT'], 10)
         refPort = int(zinfo.properties['MESSAGEREFPORT'], 10)
+    except KeyError:
+        inPort = int(zinfo.properties[b'MESSAGEOUTPORT'], 10)
+        refPort = int(zinfo.properties[b'MESSAGEREFPORT'], 10)
         
-        context = zmq.Context()
-        sockRef = context.socket(zmq.REQ)
-        sockRef.connect("tcp://%s:%i" % (outHost, refPort))
-        
-        infs = []
-        cmds = []
-        # Process the input files
-        for filename in args.filename:
-            ## Parse the metadata
-            try:
-                filetags, barcodes, beam, date, isSpec, origPath = parseMetadata(filename)
-            except KeyError:
-                print("WARNING: could not parse '%s', skipping" % os.path.basename(filename))
+    context = zmq.Context()
+    sockRef = context.socket(zmq.REQ)
+    sockRef.connect("tcp://%s:%i" % (outHost, refPort))
+    
+    infs = []
+    cmds = []
+    # Process the input files
+    for filename in args.filename:
+        ## Parse the metadata
+        try:
+            filetags, barcodes, beam, date, isSpec, origPath = parseMetadata(filename)
+        except KeyError:
+            print("WARNING: could not parse '%s', skipping" % os.path.basename(filename))
+            continue
+            
+        ## Go!
+        inHost = "DR%i" % beam
+        _drPathCache = {}
+        _done = []
+        for oid,(filetag,barcode) in enumerate(zip(filetags, barcodes)):
+            ### Make sure we have a valid tag
+            if filetag in ('', 'UNK'):
+                print("WARNING: invalid filetag '%s' for observation %i of '%s', skipping" % (filetag, oid+1, filename))
                 continue
                 
-            ## Go!
-            inHost = "DR%i" % beam
-            _drPathCache = {}
-            _done = []
-            for oid,(filetag,barcode) in enumerate(zip(filetags, barcodes)):
-                ### Make sure we have a valid tag
-                if filetag in ('', 'UNK'):
-                    print("WARNING: invalid filetag '%s' for observation %i of '%s', skipping" % (filetag, oid+1, filename))
+            ### See if we should transfer this file
+            if len(args.observations) > 0:
+                if oid not in args.observations:
                     continue
                     
-                ### See if we should transfer this file
-                if len(args.observations) > 0:
-                    if oid not in args.observations:
-                        continue
-                        
-                ### See if we have already transferred this file
-                if filetag in _done:
-                    continue
-                    
-                ### Get the path on the DR
-                try:
-                    drPath = _drPathCache[(beam,barcode)]
-                except KeyError:
-                    _drPathCache[(beam,barcode)] = getDRSUPath(beam, barcode)
-                    drPath = _drPathCache[(beam,barcode)]
-                    
-                ### Make the delete
-                if drPath is None:
-                    print("WARNING: could not find path for DRSU '%s' on DR%i, skipping" % (barcode, beam))
-                    continue
-                    
-                srcPath= "%s:%s/DROS/%s/%s" % (inHost, drPath, 'Spec' if isSpec else 'Rec', filetag)
+            ### See if we have already transferred this file
+            if filetag in _done:
+                continue
                 
-                yesno = raw_input("remove %s? " % srcPath)
-                if yesno.lower() not in ('y', 'yes'):
-                    ### Update the done list
-                    _done.append( filetag )
-                    continue
-                    
-                try:
-                    host, hostpath = srcPath.split(':', 1)
-                except ValueError:
-                    host, hostpath = '', srcPath
-                if host == '':
-                    host = inHost
-                    hostpath = os.path.abspath(hostpath)
-                    
-                flag = ''
-                if args.now:
-                    flag = '-tNOW '
-                    
-                infs.append( "Queuing delete for %s:%s " % (host, hostpath) )
-                cmds.append( buildPayload(inHost, "SRM", data="%s%s:%s" % (flag, host, hostpath), refSocket=sockRef) )
+            ### Get the path on the DR
+            try:
+                drPath = _drPathCache[(beam,barcode)]
+            except KeyError:
+                _drPathCache[(beam,barcode)] = getDRSUPath(beam, barcode)
+                drPath = _drPathCache[(beam,barcode)]
                 
+            ### Make the delete
+            if drPath is None:
+                print("WARNING: could not find path for DRSU '%s' on DR%i, skipping" % (barcode, beam))
+                continue
+                
+            srcPath= "%s:%s/DROS/%s/%s" % (inHost, drPath, 'Spec' if isSpec else 'Rec', filetag)
+            
+            yesno = raw_input("remove %s? " % srcPath)
+            if yesno.lower() not in ('y', 'yes'):
                 ### Update the done list
                 _done.append( filetag )
+                continue
                 
-        try:
-            sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sockOut.settimeout(5)
-            sockIn  = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sockIn.bind(("0.0.0.0", inPort))
-            sockIn.settimeout(5)
+            try:
+                host, hostpath = srcPath.split(':', 1)
+            except ValueError:
+                host, hostpath = '', srcPath
+            if host == '':
+                host = inHost
+                hostpath = os.path.abspath(hostpath)
+                
+            flag = ''
+            if args.now:
+                flag = '-tNOW '
+                
+            infs.append( "Queuing delete for %s:%s " % (host, hostpath) )
+            cmds.append( buildPayload(inHost, "SRM", data="%s%s:%s" % (flag, host, hostpath), refSocket=sockRef) )
             
-            for inf,cmd in zip(infs,cmds):
-                print(inf)
-                
-                sockOut.sendto(cmd, (outHost, outPort))
-                data, address = sockIn.recvfrom(MCS_RCV_BYTES)
-                
-                cStatus, sStatus, info = parsePayload(data)
-                info = info.split('\n')
-                if len(info) == 1:
-                    print(cStatus, sStatus, info[0])
-                else:
-                    print(cStatus, sStatus)
-                    for line in info:
-                        print("  %s" % line)
-                        
-            sockIn.close()
-            sockOut.close()
-        except socket.error as e:
-            raise RuntimeError(str(e))
+            ### Update the done list
+            _done.append( filetag )
             
-        sockRef.close()
-        context.term()
+    try:
+        sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sockOut.settimeout(5)
+        sockIn  = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sockIn.bind(("0.0.0.0", inPort))
+        sockIn.settimeout(5)
         
+        for inf,cmd in zip(infs,cmds):
+            print(inf)
+            
+            try:
+                cmd = bytes(cmd, 'ascii')
+            except TypeError:
+                pass
+            sockOut.sendto(cmd, (outHost, outPort))
+            data, address = sockIn.recvfrom(MCS_RCV_BYTES)
+            
+            try:
+                data = data.decode('ascii')
+            except AttributeError:
+                pass
+            cStatus, sStatus, info = parsePayload(data)
+            info = info.split('\n')
+            if len(info) == 1:
+                print(cStatus, sStatus, info[0])
+            else:
+                print(cStatus, sStatus)
+                for line in info:
+                    print("  %s" % line)
+                    
+        sockIn.close()
+        sockOut.close()
+    except socket.error as e:
+        raise RuntimeError(str(e))
+        
+    sockRef.close()
+    context.term()
+    
     zeroconf.close()
     time.sleep(0.1)
 
@@ -319,7 +326,7 @@ if __name__ == "__main__":
         )
     parser.add_argument('filename', type=str, nargs='+',
                         help='metadata to examine')
-    parser.add_argument('-v', '--version', action='store_true', 
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s revision $Rev$',
                         help='display version information')
     parser.add_argument('-o', '--observations', type=str, default='-1',
                         help='comma separated list of obseration numbers to transfer (one based; -1 = tranfer all obserations)')

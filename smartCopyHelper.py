@@ -190,178 +190,185 @@ def main(args):
     if zinfo is None:
         raise RuntimeError("Cannot find the smart copy command server")
         
-    if args.version:
-        ## Smart copy command server info
-        print(zinfo)
-        
-    else:
-        outHost = socket.inet_ntoa(zinfo.address)
-        outPort = zinfo.port
-        try:
-            inHost = socket.gethostname().split('-')[1].upper()
-        except IndexError:
-            inHost = socket.gethostname().upper()[:3]
-        while len(inHost) < 3:
-            inHost += "_"
+    outHost = socket.inet_ntoa(zinfo.address)
+    outPort = zinfo.port
+    try:
+        inHost = socket.gethostname().split('-')[1].upper()
+    except IndexError:
+        inHost = socket.gethostname().upper()[:3]
+    while len(inHost) < 3:
+        inHost += "_"
+    try:
         inPort = int(zinfo.properties['MESSAGEOUTPORT'], 10)
         refPort = int(zinfo.properties['MESSAGEREFPORT'], 10)
+    except KeyError:
+        inPort = int(zinfo.properties[b'MESSAGEOUTPORT'], 10)
+        refPort = int(zinfo.properties[b'MESSAGEREFPORT'], 10)
         
-        context = zmq.Context()
-        sockRef = context.socket(zmq.REQ)
-        sockRef.connect("tcp://%s:%i" % (outHost, refPort))
-        
-        infs = []
-        cmds = []
-        destUser = args.ucfuser[0]
-        
-        # Validate the UCF username
-        try:
-            output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'ls /data/network/recent_data/%s' % destUser])
-        except subprocess.CalledProcessError:
-            if destUser[:4] == 'eLWA':
-                try:
-                    output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'mkdir -p /data/network/recent_data/%s' % destUser])
-                    print("NOTE: auto-created eLWA path: %s" % destUser)
-                except subprocess.CalledProcessError:
-                    raise RuntimeError("Could not auto-create eLWA path: %s" % destUser)
-            elif destUser == 'original':
-                ## This is ok since it just tells the script to use the orginal file path
-                pass
-            else:
-                raise RuntimeError("Invalid UCF username/path: %s" % destUser)
-                
-        # Process the input files
-        metadataDone = []
-        for filename in args.filename:
-            ## Parse the metadata
+    context = zmq.Context()
+    sockRef = context.socket(zmq.REQ)
+    sockRef.connect("tcp://%s:%i" % (outHost, refPort))
+    
+    infs = []
+    cmds = []
+    destUser = args.ucfuser[0]
+    
+    # Validate the UCF username
+    try:
+        output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'ls /data/network/recent_data/%s' % destUser])
+    except subprocess.CalledProcessError:
+        if destUser[:4] == 'eLWA':
             try:
-                filetags, barcodes, beam, date, isSpec, origPath = parseMetadata(filename)
-            except KeyError:
-                print("WARNING: could not parse '%s', skipping" % os.path.basename(filename))
+                output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'mkdir -p /data/network/recent_data/%s' % destUser])
+                print("NOTE: auto-created eLWA path: %s" % destUser)
+            except subprocess.CalledProcessError:
+                raise RuntimeError("Could not auto-create eLWA path: %s" % destUser)
+        elif destUser == 'original':
+            ## This is ok since it just tells the script to use the orginal file path
+            pass
+        else:
+            raise RuntimeError("Invalid UCF username/path: %s" % destUser)
+            
+    # Process the input files
+    metadataDone = []
+    for filename in args.filename:
+        ## Parse the metadata
+        try:
+            filetags, barcodes, beam, date, isSpec, origPath = parseMetadata(filename)
+        except KeyError:
+            print("WARNING: could not parse '%s', skipping" % os.path.basename(filename))
+            continue
+            
+        ## Go!
+        inHost = "DR%i" % beam
+        _drPathCache = {}
+        _done = []
+        for oid,(filetag,barcode) in enumerate(zip(filetags, barcodes)):
+            ### Make sure we have a valid tag
+            if filetag in ('', 'UNK'):
+                print("WARNING: invalid filetag '%s' for observation %i of '%s', skipping" % (filetag, oid+1, filename))
                 continue
                 
-            ## Go!
-            inHost = "DR%i" % beam
-            _drPathCache = {}
-            _done = []
-            for oid,(filetag,barcode) in enumerate(zip(filetags, barcodes)):
-                ### Make sure we have a valid tag
-                if filetag in ('', 'UNK'):
-                    print("WARNING: invalid filetag '%s' for observation %i of '%s', skipping" % (filetag, oid+1, filename))
+            ### See if we should transfer this file
+            if len(args.observations) > 0:
+                if oid not in args.observations:
                     continue
                     
-                ### See if we should transfer this file
-                if len(args.observations) > 0:
-                    if oid not in args.observations:
-                        continue
-                        
-                ### See if we have already transferred this file
-                if filetag in _done:
+            ### See if we have already transferred this file
+            if filetag in _done:
+                continue
+                
+            ### Get the path on the DR
+            try:
+                drPath = _drPathCache[(beam,barcode)]
+            except KeyError:
+                _drPathCache[(beam,barcode)] = getDRSUPath(beam, barcode)
+                drPath = _drPathCache[(beam,barcode)]
+                
+            ### Make the copy
+            if drPath is None:
+                print("WARNING: could not find path for DRSU '%s' on DR%i, skipping" % (barcode, beam))
+                continue
+                
+            srcPath= "%s:%s/DROS/%s/%s" % (inHost, drPath, 'Spec' if isSpec else 'Rec', filetag)
+            if destUser == 'original':
+                if origPath is None:
+                    print("WARNING: no original path found for '%s', skipping" % filetag)
                     continue
-                    
-                ### Get the path on the DR
-                try:
-                    drPath = _drPathCache[(beam,barcode)]
-                except KeyError:
-                    _drPathCache[(beam,barcode)] = getDRSUPath(beam, barcode)
-                    drPath = _drPathCache[(beam,barcode)]
-                    
-                ### Make the copy
-                if drPath is None:
-                    print("WARNING: could not find path for DRSU '%s' on DR%i, skipping" % (barcode, beam))
-                    continue
-                    
-                srcPath= "%s:%s/DROS/%s/%s" % (inHost, drPath, 'Spec' if isSpec else 'Rec', filetag)
+                destPath = "%s:/mnt/network/recent_data/%s" % (inHost, origPath)
+            else:
+                destPath = "%s:/mnt/network/recent_data/%s" % (inHost, destUser)
+            
+            try:
+                host, hostpath = srcPath.split(':', 1)
+            except ValueError:
+                host, hostpath = '', srcPath
+            if host == '':
+                host = inHost
+                hostpath = os.path.abspath(hostpath)
+                
+            try:
+                dest, destpath = destPath.split(':', 1)
+            except ValueError:
+                dest, destpath = '', destPath
+            if dest == '':
+                dest = inHost
+                destpath = os.path.abspath(destpath)
+                
+            infs.append( "Queuing copy for %s:%s to %s:%s" % (host, hostpath, dest, destpath) )
+            cmds.append( buildPayload(inHost, "SCP", data="%s:%s->%s:%s" % (host, hostpath, dest, destpath), refSocket=sockRef) )
+            
+            if args.metadata:
+                mtdPath = os.path.abspath(filename)
                 if destUser == 'original':
-                    if origPath is None:
-                        print("WARNING: no original path found for '%s', skipping" % filetag)
-                        continue
                     destPath = "%s:/mnt/network/recent_data/%s" % (inHost, origPath)
                 else:
-                    destPath = "%s:/mnt/network/recent_data/%s" % (inHost, destUser)
-                
-                try:
-                    host, hostpath = srcPath.split(':', 1)
-                except ValueError:
-                    host, hostpath = '', srcPath
-                if host == '':
-                    host = inHost
-                    hostpath = os.path.abspath(hostpath)
+                    destPath = "%s:/data/network/recent_data/%s" % ('lwaucf0', destUser)
                     
                 try:
-                    dest, destpath = destPath.split(':', 1)
+                    dest ,destpath = destPath.split(':', 1)
                 except ValueError:
                     dest, destpath = '', destPath
                 if dest == '':
-                    dest = inHost
+                    dest = 'lwaucf0'
                     destpath = os.path.abspath(destpath)
                     
-                infs.append( "Queuing copy for %s:%s to %s:%s" % (host, hostpath, dest, destpath) )
-                cmds.append( buildPayload(inHost, "SCP", data="%s:%s->%s:%s" % (host, hostpath, dest, destpath), refSocket=sockRef) )
-                
-                if args.metadata:
-                    mtdPath = os.path.abspath(filename)
-                    if destUser == 'original':
-                        destPath = "%s:/mnt/network/recent_data/%s" % (inHost, origPath)
-                    else:
-                        destPath = "%s:/data/network/recent_data/%s" % ('lwaucf0', destUser)
-                        
-                    try:
-                        dest ,destpath = destPath.split(':', 1)
-                    except ValueError:
-                        dest, destpath = '', destPath
-                    if dest == '':
-                        dest = 'lwaucf0'
-                        destpath = os.path.abspath(destpath)
-                        
-                    if mtdPath not in metadataDone:
-                        infs.append( "Copying metadata %s to %s:%s" % (filename, dest, destpath) )
-                        cmds.append( ["rsync", "-e ssh", "-avH", mtdPath, "mcsdr@%s:%s" % (dest, destpath)] )
-                        metadataDone.append( mtdPath )
-                        
-                ### Update the done list
-                _done.append( filetag )
-                
-        try:
-            sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sockOut.settimeout(5)
-            sockIn  = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sockIn.bind(("0.0.0.0", inPort))
-            sockIn.settimeout(5)
-            
-            for inf,cmd in zip(infs,cmds):
-                print(inf)
-                
-                if inf[:4] != 'Copy':
-                    ## Standard SmartCopy commands
-                    sockOut.sendto(cmd, (outHost, outPort))
-                    data, address = sockIn.recvfrom(MCS_RCV_BYTES)
+                if mtdPath not in metadataDone:
+                    infs.append( "Copying metadata %s to %s:%s" % (filename, dest, destpath) )
+                    cmds.append( ["rsync", "-e ssh", "-avH", mtdPath, "mcsdr@%s:%s" % (dest, destpath)] )
+                    metadataDone.append( mtdPath )
                     
-                    cStatus, sStatus, info = parsePayload(data)
-                    info = info.split('\n')
-                    if len(info) == 1:
-                        print(cStatus, sStatus, info[0])
-                    else:
-                        print(cStatus, sStatus)
-                        for line in info:
-                            print("  %s" % line)
-                            
-                else:
-                    ## Custom metadata scp command
-                    try:
-                        output = subprocess.check_output(cmd)
-                        print("  Done")
-                    except subprocess.CalledProcessError:
-                        print("  WARNING: failed to copy metadata, skipping")
-                    
-            sockIn.close()
-            sockOut.close()
-        except socket.error as e:
-            raise RuntimeError(str(e))
+            ### Update the done list
+            _done.append( filetag )
             
-        sockRef.close()
-        context.term()
+    try:
+        sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sockOut.settimeout(5)
+        sockIn  = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sockIn.bind(("0.0.0.0", inPort))
+        sockIn.settimeout(5)
         
+        for inf,cmd in zip(infs,cmds):
+            print(inf)
+            
+            if inf[:4] != 'Copy':
+                ## Standard SmartCopy commands
+                try:
+                    cmd = bytes(cmd, 'ascii')
+                except TypeError:
+                    pass
+                sockOut.sendto(cmd, (outHost, outPort))
+                data, address = sockIn.recvfrom(MCS_RCV_BYTES)
+                
+                try:
+                    data = data.decode('ascii')
+                except AttributeError:
+                    pass
+                cStatus, sStatus, info = parsePayload(data)
+                info = info.split('\n')
+                if len(info) == 1:
+                    print(cStatus, sStatus, info[0])
+                else:
+                    print(cStatus, sStatus)
+                    for line in info:
+                        print("  %s" % line)
+                        
+            else:
+                ## Custom metadata scp command
+                try:
+                    output = subprocess.check_output(cmd)
+                    print("  Done")
+                except subprocess.CalledProcessError:
+                    print("  WARNING: failed to copy metadata, skipping")
+                
+        sockIn.close()
+        sockOut.close()
+    except socket.error as e:
+        raise RuntimeError(str(e))
+        
+    sockRef.close()
+    context.term()
+    
     zeroconf.close()
     time.sleep(0.1)
 
@@ -375,7 +382,7 @@ if __name__ == "__main__":
                         help='metadata to examine')
     parser.add_argument('ucfuser', type=str, nargs=1,
                         help='destination to copy to')
-    parser.add_argument('-v', '--version', action='store_true', 
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s revision $Rev$',
                         help='display version information')
     parser.add_argument('-o', '--observations', type=str, default='-1',
                         help='comma separated list of obseration numbers to transfer (one based; -1 = tranfer all obserations)')

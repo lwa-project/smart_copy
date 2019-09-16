@@ -89,79 +89,90 @@ def parsePayload(payload):
 def main(args):
     # Connect to the smart copy command server
     zeroconf = Zeroconf()
+    tPoll = time.time()
     zinfo = zeroconf.get_service_info("_sccs._udp.local.", "Smart copy server._sccs._udp.local.")
+    while time.time() - tPoll <= 10.0 and zinfo is None:
+        time.sleep(1)
+        zinfo = zeroconf.get_service_info("_sccs._udp.local.", "Smart copy server._sccs._udp.local.")
     if zinfo is None:
         raise RuntimeError("Cannot find the smart copy command server")
         
-    if args.version:
-        ## Smart copy command server info
-        print(zinfo)
-        
-    else:
-        outHost = socket.inet_ntoa(zinfo.address)
-        outPort = zinfo.port
-        try:
-            inHost = socket.gethostname().split('-')[1].upper()
-        except IndexError:
-            inHost = socket.gethostname().upper()[:3]
-        while len(inHost) < 3:
-            inHost += "_"
+    outHost = socket.inet_ntoa(zinfo.address)
+    outPort = zinfo.port
+    try:
+        inHost = socket.gethostname().split('-')[1].upper()
+    except IndexError:
+        inHost = socket.gethostname().upper()[:3]
+    while len(inHost) < 3:
+        inHost += "_"
+    try:
         inPort = int(zinfo.properties['MESSAGEOUTPORT'], 10)
         refPort = int(zinfo.properties['MESSAGEREFPORT'], 10)
+    except KeyError:
+        inPort = int(zinfo.properties[b'MESSAGEOUTPORT'], 10)
+        refPort = int(zinfo.properties[b'MESSAGEREFPORT'], 10)
         
-        context = zmq.Context()
-        sockRef = context.socket(zmq.REQ)
-        sockRef.connect("tcp://%s:%i" % (outHost, refPort))
-        
-        infs = []
-        cmds = []
-        srcPaths = args.filename
-        for srcPath in srcPaths:
-            try:
-                host, hostpath = srcPath.split(':', 1)
-            except ValueError:
-                host, hostpath = '', srcPath
-            if host == '':
-                host = inHost
-                hostpath = os.path.abspath(hostpath)
-                
-            flag = ''
-            if args.now:
-                flag = '-tNOW '
-                
-            infs.append( "Queuing delete for %s:%s" % (host, hostpath) )
-            cmds.append( buildPayload(inHost, "SRM", data="%s%s:%s" % (flag, host, hostpath), refSocket=sockRef) )
-            
+    context = zmq.Context()
+    sockRef = context.socket(zmq.REQ)
+    sockRef.connect("tcp://%s:%i" % (outHost, refPort))
+    
+    infs = []
+    cmds = []
+    srcPaths = args.filename
+    for srcPath in srcPaths:
         try:
-            sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sockOut.settimeout(5)
-            sockIn  = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sockIn.bind(("0.0.0.0", inPort))
-            sockIn.settimeout(5)
+            host, hostpath = srcPath.split(':', 1)
+        except ValueError:
+            host, hostpath = '', srcPath
+        if host == '':
+            host = inHost
+            hostpath = os.path.abspath(hostpath)
             
-            for inf,cmd in zip(infs,cmds):
-                print(inf)
-                
-                sockOut.sendto(cmd, (outHost, outPort))
-                data, address = sockIn.recvfrom(MCS_RCV_BYTES)
-                
-                cStatus, sStatus, info = parsePayload(data)
-                info = info.split('\n')
-                if len(info) == 1:
-                    print(cStatus, sStatus, info[0])
-                else:
-                    print(cStatus, sStatus)
-                    for line in info:
-                        print("  %s" % line)
-                        
-            sockIn.close()
-            sockOut.close()
-        except socket.error as e:
-            raise RuntimeError(str(e))
+        flag = ''
+        if args.now:
+            flag = '-tNOW '
             
-        sockRef.close()
-        context.term()
+        infs.append( "Queuing delete for %s:%s" % (host, hostpath) )
+        cmds.append( buildPayload(inHost, "SRM", data="%s%s:%s" % (flag, host, hostpath), refSocket=sockRef) )
         
+    try:
+        sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sockOut.settimeout(5)
+        sockIn  = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sockIn.bind(("0.0.0.0", inPort))
+        sockIn.settimeout(5)
+        
+        for inf,cmd in zip(infs,cmds):
+            print(inf)
+            
+            try:
+                cmd = bytes(cmd, 'ascii')
+            except TypeError:
+                pass
+            sockOut.sendto(cmd, (outHost, outPort))
+            data, address = sockIn.recvfrom(MCS_RCV_BYTES)
+            
+            try:
+                data = data.decode('ascii')
+            except AttributeError:
+                pass
+            cStatus, sStatus, info = parsePayload(data)
+            info = info.split('\n')
+            if len(info) == 1:
+                print(cStatus, sStatus, info[0])
+            else:
+                print(cStatus, sStatus)
+                for line in info:
+                    print("  %s" % line)
+                    
+        sockIn.close()
+        sockOut.close()
+    except socket.error as e:
+        raise RuntimeError(str(e))
+        
+    sockRef.close()
+    context.term()
+    
     zeroconf.close()
     time.sleep(0.1)
 
@@ -173,7 +184,7 @@ if __name__ == "__main__":
         )
     parser.add_argument('filename', type=str, nargs='+',
                         help='filename to delete')
-    parser.add_argument('-v', '--version', action='store_true', 
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s revision $Rev$', 
                         help='display version information')
     parser.add_argument('-n', '--now', action='store_true',
                         help='request that the delete(s) be executed as soon as the command(s) reach the front of the queue')
