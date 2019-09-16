@@ -215,7 +215,8 @@ def main(args):
     
     # Validate the UCF username
     try:
-        output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'ls /data/network/recent_data/%s' % destUser])
+        with open('/dev/null', 'w+b') as devnull:
+            output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'ls /data/network/recent_data/%s' % destUser], stderr=devnull)
     except subprocess.CalledProcessError:
         if destUser[:4] == 'eLWA':
             try:

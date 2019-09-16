@@ -239,7 +239,8 @@ class InterruptibleCopy(object):
                 cmd.append('du -b %s' % self.hostpath)
                 
             try:
-                output = subprocess.check_output(cmd)
+                with open('/dev/null', 'w+b') as devnull:
+                    output = subprocess.check_output(cmd, stderr=devnull)
                 try:
                     output = output.decode('ascii')
                 except AttributeError:
