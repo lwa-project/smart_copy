@@ -110,6 +110,10 @@ class DiskBackedQueue(Queue.Queue):
                     if os.path.getsize(self._filename) > 0:
                         with open(self._filename, 'r') as fh:
                             contents = fh.read()
+                        try:
+                            contents = contents.decode('ascii')
+                        except AttributeError:
+                            pass
                         contents = contents.split(self._sep)
                         for i,entry in enumerate(contents):
                             try:
