@@ -18,7 +18,7 @@ except ImportError:
     from logging import FileHandler as WatchedFileHandler
 import traceback
 try:
-    import cStringIO as StringIO
+    from cStringIO import StringIO
 except ImportError:
     from io import StringIO
 from collections import deque
@@ -464,10 +464,10 @@ def main(args):
             
         except Exception as e:
             exc_type, exc_value, exc_traceback = sys.exc_info()
-            logger.error("smart_cmnd.py failed with: %s at line %i", str(e), traceback.tb_lineno(exc_traceback))
+            logger.error("smart_cmnd.py failed with: %s at line %i", str(e), exc_traceback.tb_lineno)
                 
             ## Grab the full traceback and save it to a string via StringIO
-            fileObject = StringIO.StringIO()
+            fileObject = StringIO()
             traceback.print_tb(exc_traceback, file=fileObject)
             tbString = fileObject.getvalue()
             fileObject.close()
