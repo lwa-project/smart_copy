@@ -110,12 +110,12 @@ class DiskBackedQueue(Queue.Queue):
                     if os.path.getsize(self._filename) > 0:
                         with open(self._filename, 'r') as fh:
                             contents = fh.read()
-                        try:
-                            contents = contents.decode('ascii')
-                        except AttributeError:
-                            pass
                         contents = contents.split(self._sep)
                         for i,entry in enumerate(contents):
+                            try:
+                                entry = bytes(entry, 'ascii')
+                            except TypeError:
+                                pass
                             try:
                                 item = pickle.loads(entry)
                                 Queue.Queue.put(self, item)
@@ -140,7 +140,12 @@ class DiskBackedQueue(Queue.Queue):
                 contents = []
                 
             if put is not None:
-                contents.insert(0, pickle.dumps(put))
+                put = pickle.dumps(put)
+                try:
+                    put = put.decode('ascii')
+                except AttributeError:
+                    pass
+                contents.insert(0, put)
                 with open(self._filename, 'w') as fh:
                     fh.write(self._sep.join(contents))
             elif task_done:
@@ -378,7 +383,10 @@ class InterruptibleCopy(object):
         """
         
         if self.thread is not None:
-            self.process.kill()
+            try:
+                self.process.kill()
+            except OSError:
+                pass
             self.thread.join()
             
             self.thread = None

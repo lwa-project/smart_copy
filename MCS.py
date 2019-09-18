@@ -390,7 +390,11 @@ class ReferenceServer(object):
                         continue
                     if message == b'next_ref':
                         try:
-                            socket.send(b"%i" % i)
+                            payload = bytes("%i" % i, 'ascii')
+                        except TypeError:
+                            payload = b"%i" % i
+                        try:
+                            socket.send(payload)
                         except zmq.ZMQError as e:
                             self.logger.error('_generator: error on send: %s', str(e))
                             continue

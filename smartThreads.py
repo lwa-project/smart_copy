@@ -16,7 +16,7 @@ import traceback
 import subprocess
 import logging
 try:
-    import cStringIO as StringIO
+    from cStringIO import StringIO
 except ImportError:
     from io import StringIO
 
@@ -197,7 +197,7 @@ class MonitorStation(object):
                 smartThreadsLogger.error("MonitorStation: pollStation failed with: %s at line %i", str(e), exc_traceback.tb_lineno)
                 
                 ## Grab the full traceback and save it to a string via StringIO
-                fileObject = StringIO.StringIO()
+                fileObject = StringIO()
                 traceback.print_tb(exc_traceback, file=fileObject)
                 tbString = fileObject.getvalue()
                 fileObject.close()
@@ -210,8 +210,11 @@ class MonitorStation(object):
             
         # Clean up and get ready to exit
         watch.unregister(tail.stdout)
-        tail.kill()
-        
+        try:
+            tail.kill()
+        except OSError:
+            pass
+            
         # Done
         return True
         
@@ -438,7 +441,7 @@ class ManageDR(object):
                 smartThreadsLogger.error("ManageDR: processQueue failed with: %s at line %i", str(e), exc_traceback.tb_lineno)
                 
                 ## Grab the full traceback and save it to a string via StringIO
-                fileObject = StringIO.StringIO()
+                fileObject = StringIO()
                 traceback.print_tb(exc_traceback, file=fileObject)
                 tbString = fileObject.getvalue()
                 fileObject.close()
