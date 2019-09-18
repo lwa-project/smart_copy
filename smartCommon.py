@@ -118,6 +118,13 @@ class DiskBackedQueue(Queue.Queue):
                                 pass
                             try:
                                 item = pickle.loads(entry)
+                                ## Try to avoid ID collisions across restarts
+                                ## NOTE:  This is particullarly clean since
+                                ##        it doesn't update the ID in the file
+                                host, hostpath, dest, destpath, id, retries, lasttry = item
+                                if id < 1024:
+                                    id += 1024
+                                    item = (host, hostpath, dest, destpath, id, retries, lasttry)
                                 Queue.Queue.put(self, item)
                                 self.restored.append(item)
                             except Exception as e:
@@ -140,7 +147,7 @@ class DiskBackedQueue(Queue.Queue):
                 contents = []
                 
             if put is not None:
-                put = pickle.dumps(put)
+                put = pickle.dumps(put, protocol=0)
                 try:
                     put = put.decode('ascii')
                 except AttributeError:
