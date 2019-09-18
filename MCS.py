@@ -191,7 +191,7 @@ class Communicate(object):
                             
                 except Exception as e:
                     exc_type, exc_value, exc_traceback = sys.exc_info()
-                    self.logger.error("packetProcessor failed with: %s at line %i", str(e), traceback.tb_lineno(exc_traceback))
+                    self.logger.error("packetProcessor failed with: %s at line %i", str(e), exc_traceback.tb_lineno)
                         
                     ## Grab the full traceback and save it to a string via StringIO
                     fileObject = StringIO.StringIO()
@@ -216,7 +216,7 @@ class Communicate(object):
                         
                 except Exception as e:
                     exc_type, exc_value, exc_traceback = sys.exc_info()
-                    logger.error("packetProcessor failed with: %s at line %i", str(e), traceback.tb_lineno(exc_traceback))
+                    logger.error("packetProcessor failed with: %s at line %i", str(e), exc_traceback.tb_lineno)
                         
                     ## Grab the full traceback and save it to a string via StringIO
                     fileObject = StringIO.StringIO()

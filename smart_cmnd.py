@@ -344,7 +344,7 @@ class MCSCommunicate(Communicate):
                 packed_data = 'Unknown command: %s' % command
                 
             # Prune command status list of old values
-            for previousSlotTime in self.commandStatus.keys()[:-4]:
+            for previousSlotTime in list(self.commandStatus.keys())[:-4]:
                 del self.commandStatus[previousSlotTime]
                 
             # Return status, command, reference, and the result
