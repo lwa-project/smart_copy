@@ -240,6 +240,31 @@ class InterruptibleCopy(object):
         
         return self.status
         
+    def getFileExists(self):
+        """
+        Return if the source file exists or not.
+        """
+        
+        if self.host == '':
+            cmd = ['du', '-b', self.hostpath]
+        else:
+            cmd = ["ssh", "-t", "-t", "mcsdr@%s" % self.host.lower()]
+            cmd.append('du -b %s' % self.hostpath)
+            
+        try:
+            with open('/dev/null', 'w+b') as devnull:
+                output = subprocess.check_output(cmd, stderr=devnull)
+            try:
+                output = output.decode('ascii')
+            except AttributeError:
+                pass
+            junk = output.split(None, 1)[0]
+            exists = True
+        except (subprocess.CalledProcessError, IndexError):
+            exists = False
+            
+        return exists
+        
     def getFileSize(self):
         """
         Return the filesize to be copied in bytes.
@@ -458,14 +483,14 @@ class InterruptibleCopy(object):
             
         if self.host == '':
             # Locally originating copy
-            cmd = ['truncate', '-c', '-s -512K']
+            cmd = ['bash', '-c', "if test -e %s; then truncate -c -s -512K %%s; fi" % self.hostpath]
             
             if self.dest == '':
                 # Local destination
                 ## Directory/path check
                 if os.path.exists(self.destpath) and os.path.isdir(self.destpath):
                     filename = os.path.basename(self.hostpath)
-                    cmd.append( "%s" % os.path.join(self.destpath, filename) )
+                    cmd[-1] = cmd[-1] % filename
                 else:
                     cmd = None
             else:
@@ -478,7 +503,7 @@ class InterruptibleCopy(object):
             
             if self.dest == self.host:
                 # Source and destination are on the same machine
-                cmd.append( 'if test -d %s; then truncate -c -s -512K %s/`basename %s`; else truncate -c -s -512K %s; fi' % (self.destpath, self.destpath, self.hostpath, self.destpath) )
+                cmd.append( 'if test -e %s && test -d %s; then truncate -c -s -512K %s/`basename %s`; else truncate -c -s -512K %s; fi' % (self.hostpath, self.destpath, self.destpath, self.hostpath, self.destpath) )
                 check_test = True
             else:
                 # Source and destination are on different machines
