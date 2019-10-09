@@ -386,6 +386,9 @@ class ManageDR(object):
                         if self.active.isRemote():
                             rcl.release()
                             
+                        ### Reset the active variable now that we've dealt with it
+                        self.active = None
+                        
                 if readyToProcess:
                     # Try to clean things up on the DR
                     if time.time() - tLastPurge > 86400:
