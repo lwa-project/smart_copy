@@ -11,6 +11,7 @@ import math
 import time
 import socket
 import argparse
+import subprocess
 from datetime import datetime
 
 from zeroconf import Zeroconf
@@ -18,6 +19,10 @@ from zeroconf import Zeroconf
 
 # Maximum number of bytes to receive from MCS
 MCS_RCV_BYTES = 16*1024
+
+
+# Regular expresion to check for remote paths
+REMOTE_PATH_RE = re.compile('^((?P<user>[a-zA-Z0-9]+)\@)?(?P<host>[a-zA-Z0-9\-]+)\:')
 
 
 def getTime():
@@ -136,7 +141,15 @@ def main(args):
         if dest == '':
             dest = inHost
             destpath = os.path.abspath(destpath)
-            
+        else:
+            if host == inHost:
+                try:
+                    p = subprocess.Popen(['timeout', '-k', '5', '10', 'ssh', dest, 'date'])
+                    if p.wait() != 0:
+                        raise RuntimeError("Cannot login to %s" % dest)
+                except subprocess.CalledProcessError as e:
+                    raise RuntimeError("Cannot test login for %s: %s", dest, str(e))
+                    
         infs.append( "Queuing copy for %s:%s to %s:%s" % (host, hostpath, dest, destpath) )
         cmds.append( buildPayload(inHost, "SCP", data="%s:%s->%s:%s" % (host, hostpath, dest, destpath), refSocket=sockRef) )
         
