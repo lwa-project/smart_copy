@@ -111,7 +111,7 @@ def main(args):
         refPort = int(zinfo.properties[b'MESSAGEREFPORT'], 10)
         
     cmds = []
-    nDR = 3 if SITE == 'lwasv' else 5
+    nDR = 4 if SITE == 'lwasv' else 5
     for i in range(1, nDR+1):
         dr = 'DR%i' % i
         if args.all or dr in args.DR:
