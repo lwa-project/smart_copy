@@ -391,8 +391,13 @@ def main(args):
     logger.info('Current MPM: %i', mpm)
     logger.info('All dates and times are in UTC except where noted')
     
+    # Set the site-dependant MESSAGEOUTHOST IP address
+    MESSAGEOUTHOST = "10.1.1.2"
+    if SITE == 'lwasv':
+        MESSAGEOUTHOST = "10.1.2.2"
+        
     # Setup the configuration and zeroconf
-    config = {'MESSAGEINPORT': 5050, 'MESSAGEOUTPORT': 5051, 'MESSAGEREFPORT': 5052, 'MESSAGEOUTHOST': '10.1.1.2'}
+    config = {'MESSAGEINPORT': 5050, 'MESSAGEOUTPORT': 5051, 'MESSAGEREFPORT': 5052, 'MESSAGEOUTHOST': MESSAGEOUTHOST}
     try:
         from zeroconf import Zeroconf, ServiceInfo
         
@@ -403,7 +408,7 @@ def main(args):
             zconfig[key] = str(config[key])
         
         zinfo = ServiceInfo("_sccs._udp.local.", "Smart copy server._sccs._udp.local.", 
-                    socket.inet_aton("10.1.1.2"), config['MESSAGEINPORT'], 0, 0, 
+                    socket.inet_aton(config['MESSAGEOUTHOST']), config['MESSAGEINPORT'], 0, 0, 
                     zconfig, "%s.local." % socket.gethostname())
                     
         zeroconf.register_service(zinfo)
