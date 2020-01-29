@@ -107,7 +107,7 @@ class MonitorStation(object):
         for line in lines:
             ## Parse the line
             try:
-                line = line.decode('ascii')
+                line = line.decode('ascii', errors='ignore')
             except AttributeError:
                 pass
             fields = line.split(None, 9)
