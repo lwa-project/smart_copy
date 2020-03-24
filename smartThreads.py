@@ -23,8 +23,7 @@ except ImportError:
 from smartCommon import *
 
 __version__ = "0.2"
-__revision__ = "$Rev$"
-__all__ = ['MonitorStation', 'ManageDR', '__version__', '__revision__', '__all__']
+__all__ = ['MonitorStation', 'ManageDR']
 
 
 smartThreadsLogger = logging.getLogger('__main__')

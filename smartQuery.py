@@ -187,7 +187,7 @@ if __name__ == "__main__":
         )
     parser.add_argument('query', type=mib, nargs='+',
                         help='MIB to query')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s revision $Rev$', 
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s', 
                         help='display version information')
     args = parser.parse_args()
     main(args)

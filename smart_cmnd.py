@@ -27,9 +27,7 @@ from MCS import *
 from smartFunctions import SmartCopy
 
 __version__ = '0.2'
-__revision__ = '$Rev$'
-__date__ = '$LastChangedDate$'
-__all__ = ['MCSCommunicate', '__version__', '__revision__', '__date__', '__all__']
+__all__ = ['MCSCommunicate',]
 
 #
 # Site Name
@@ -376,16 +374,8 @@ def main(args):
     mjd, mpm = getTime()
     
     # Report on who we are
-    try:
-        shortRevision = __revision__.split()[1]
-    except IndexError:
-        shortRevision = 'uncommitted'
-    shortDate = ' '.join(__date__.split()[1:4])
-    
     logger.info('Starting smart_cmnd.py with PID %i', os.getpid())
     logger.info('Version: %s', __version__)
-    logger.info('Revision: %s', shortRevision)
-    logger.info('Last Changed: %s',shortDate)
     logger.info('Site: %s', SITE)
     logger.info('Current MJD: %i', mjd)
     logger.info('Current MPM: %i', mpm)

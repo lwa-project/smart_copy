@@ -326,7 +326,7 @@ if __name__ == "__main__":
         )
     parser.add_argument('filename', type=str, nargs='+',
                         help='metadata to examine')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s revision $Rev$',
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s',
                         help='display version information')
     parser.add_argument('-o', '--observations', type=str, default='-1',
                         help='comma separated list of obseration numbers to transfer (one based; -1 = tranfer all obserations)')

@@ -25,10 +25,8 @@ from socket import gethostname
 from collections import OrderedDict
 
 __version__ = '0.2'
-__revision__ = '$Rev$'
 __all__ = ['SerialNumber', 'LimitedSizeDict', 'DiskBackedQueue', 
-           'InterruptibleCopy', 'DELETE_MARKER_QUEUE', 'DELETE_MARKER_NOW',
-           '__version__', '__revision__', '__all__']
+           'InterruptibleCopy', 'DELETE_MARKER_QUEUE', 'DELETE_MARKER_NOW']
 
 
 smartCommonLogger = logging.getLogger('__main__')

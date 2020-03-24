@@ -184,7 +184,7 @@ if __name__ == "__main__":
         )
     parser.add_argument('filename', type=str, nargs='+',
                         help='filename to delete')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s revision $Rev$', 
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s', 
                         help='display version information')
     parser.add_argument('-n', '--now', action='store_true',
                         help='request that the delete(s) be executed as soon as the command(s) reach the front of the queue')

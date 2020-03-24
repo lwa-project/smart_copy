@@ -204,7 +204,7 @@ if __name__ == "__main__":
                         help='filename to copy')
     parser.add_argument('destination', type=str, nargs=1,
                         help='destination to copy to')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s revision $Rev$',
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s',
                         help='display version information')
     args = parser.parse_args()
     main(args)

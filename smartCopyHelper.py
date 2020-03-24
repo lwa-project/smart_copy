@@ -383,7 +383,7 @@ if __name__ == "__main__":
                         help='metadata to examine')
     parser.add_argument('ucfuser', type=str, nargs=1,
                         help='destination to copy to')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s revision $Rev$',
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s',
                         help='display version information')
     parser.add_argument('-o', '--observations', type=str, default='-1',
                         help='comma separated list of obseration numbers to transfer (one based; -1 = tranfer all obserations)')
