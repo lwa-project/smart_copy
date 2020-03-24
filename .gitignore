@@ -1,0 +1,14 @@
+# Python stuff
+*.pyc
+
+# Queues
+.DR*.queue
+
+# Log files
+2017
+2018
+2019
+completed_DR*.log
+error_DR*.log
+runtime.log*
+
