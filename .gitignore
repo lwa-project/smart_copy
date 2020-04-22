@@ -5,9 +5,7 @@
 .DR*.queue
 
 # Log files
-2017
-2018
-2019
+20[12][0-9]
 completed_DR*.log
 error_DR*.log
 runtime.log*
