@@ -4,6 +4,7 @@
 from __future__ import print_function
 
 import os
+import git
 import sys
 import time
 import signal
@@ -373,9 +374,23 @@ def main(args):
     # Get current MJD and MPM
     mjd, mpm = getTime()
     
+    # Git information
+    try:
+        repo = git.Repo(os.path.basename(os.path.abspath(__file__)))
+        branch = repo.active_branch.name
+        hexsha = repo.active_branch.commit.hexsha
+        shortsha = hexsha[-7:]
+        dirty = ' (dirty)' if repo.is_dirty() else ''
+    except git.exc.GitError:
+        branch = 'unknown'
+        hexsha = 'unknown'
+        shortsha = 'unknown'
+        dirty = ''
+        
     # Report on who we are
     logger.info('Starting smart_cmnd.py with PID %i', os.getpid())
     logger.info('Version: %s', __version__)
+    logger.info('Revision: %s.%s%s', branch, shortsha, dirty)
     logger.info('Site: %s', SITE)
     logger.info('Current MJD: %i', mjd)
     logger.info('Current MPM: %i', mpm)
