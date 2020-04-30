@@ -22,7 +22,7 @@ MCS_RCV_BYTES = 16*1024
 
 
 # Regular expresion to check for remote paths
-REMOTE_PATH_RE = re.compile('^((?P<user>[a-zA-Z0-9]+)\@)?(?P<host>[a-zA-Z0-9\-]+)\:')
+REMOTE_PATH_RE = re.compile(r'^((?P<user>[a-zA-Z0-9]+)\@)?(?P<host>[a-zA-Z0-9\-]+)(?<!\\)\:')
 
 
 def getTime():
@@ -127,7 +127,7 @@ def main(args):
     destPath = args.destination[0]
     for srcPath in args.source:
         try:
-            host, hostpath = srcPath.split(':', 1)
+            host, hostpath = re.split(r'(?<!\\)\:', srcPath, 1)
         except ValueError:
             host, hostpath = '', srcPath
         if host == '':
@@ -135,7 +135,7 @@ def main(args):
             hostpath = os.path.abspath(hostpath)
             
         try:
-            dest, destpath = destPath.split(':', 1)
+            dest, destpath = re.split(r'(?<!\\)\:', destPath, 1)
         except ValueError:
             dest, destpath = '', destPath
         if dest == '':
