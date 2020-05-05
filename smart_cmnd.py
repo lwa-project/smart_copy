@@ -4,6 +4,7 @@
 from __future__ import print_function
 
 import os
+import re
 import git
 import sys
 import time
@@ -244,8 +245,8 @@ class MCSCommunicate(Communicate):
             # SCP
             elif command == 'SCP':
                 src, dest = data.split('->', 1)
-                host, hostpath = src.split(':', 1)
-                dest, destpath = dest.split(':', 1)
+                host, hostpath = re.split(r'(?<!\\)\:', src, 1)
+                dest, destpath = re.split(r'(?<!\\)\:', dest, 1)
                 
                 status, exitCode = self.SubSystemInstance.addCopyCommand(host, host, hostpath, dest, destpath)
                 if status:
@@ -318,7 +319,7 @@ class MCSCommunicate(Communicate):
                     now = True
                     data = data.split('-tNOW', 1)[1]
                     data = data.strip()
-                host, hostpath = data.split(':', 1)
+                host, hostpath = re.split(r'(?<!\\)\:', data, 1)
                 
                 status, exitCode = self.SubSystemInstance.addDeleteCommand(host, host, hostpath, now=now)
                 if status:
@@ -376,7 +377,7 @@ def main(args):
     
     # Git information
     try:
-        repo = git.Repo(os.path.basename(os.path.abspath(__file__)))
+        repo = git.Repo(os.path.dirname(os.path.abspath(__file__)))
         branch = repo.active_branch.name
         hexsha = repo.active_branch.commit.hexsha
         shortsha = hexsha[-7:]
