@@ -44,30 +44,30 @@ def parseMetadata(tarname):
     
     try:
         parser = metabundle
-        parser.getSessionSpec(tarname)
+        parser.get_session_spec(tarname)
     except Exception as e:
         if adpReady:
             parser = metabundleADP
-            parser.getSessionSpec(tarname)
+            parser.get_session_spec(tarname)
         else:
             raise e
             
-    project = parser.getSessionDefinition(tarname)
+    project = parser.get_sdf(tarname)
     isSpec = False
     if project.sessions[0].observations[0].mode not in ('TBW', 'TBN'):
         if project.sessions[0].spcSetup[0] != 0 and project.sessions[0].spcSetup[1] != 0:
             isSpec = True
             
-    meta = parser.getSessionMetaData(tarname)
+    meta = parser.get_session_metadata(tarname)
     tags = [meta[id]['tag'] for id in sorted(meta.keys())]
     barcodes = [meta[id]['barcode'] for id in sorted(meta.keys())]
-    meta = parser.getSessionSpec(tarname)
-    beam = meta['drxBeam']
-    date = mcs.mjdmpm2datetime(int(meta['MJD']), int(meta['MPM']))
+    meta = parser.get_session_spec(tarname)
+    beam = meta['drx_beam']
+    date = mcs.mjdmpm_to_datetime(int(meta['MJD']), int(meta['MPM']))
     datestr = date.strftime("%y%m%d")
     
     userpath = None
-    if project.sessions[0].dataReturnMethod == 'UCF':
+    if project.sessions[0].data_return_method == 'UCF':
         mtch = _usernameRE.search(project.sessions[0].comments)
         if mtch is not None:
             userpath = mtch.group('username')
@@ -112,7 +112,7 @@ def getDRSUPath(beam, barcode):
 MCS_RCV_BYTES = 16*1024
 
 
-def getTime():
+def get_time():
     """
     Return a two-element tuple of the current MJD and MPM.
     """
@@ -150,7 +150,7 @@ def buildPayload(source, cmd, data=None, refSocket=None):
         refSocket.send(b"next_ref")
         ref = int(refSocket.recv(), 10)
         
-    mjd, mpm = getTime()
+    mjd, mpm = get_time()
     
     payload = ''
     payload += 'SCM'
