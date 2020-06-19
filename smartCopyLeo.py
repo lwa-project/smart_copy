@@ -63,7 +63,7 @@ def parseMetadata(tarname):
     tags = [meta[id]['tag'] for id in sorted(meta.keys())]
     barcodes = [meta[id]['barcode'] for id in sorted(meta.keys())]
     meta = parser.get_session_spec(tarname)
-    beam = meta['drx_beam']
+    beam = meta['drxBeam']
     date = mcs.mjdmpm_to_datetime(int(meta['MJD']), int(meta['MPM']))
     datestr = date.strftime("%y%m%d")
     
