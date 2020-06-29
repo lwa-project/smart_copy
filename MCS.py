@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """
 Base module for dealing with MCS communication.  This module provides the
 MCSComminunicate framework that specified how to processes MCS commands that
@@ -17,15 +17,11 @@ import logging
 import threading
 import traceback
 
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from io import StringIO
-        
+from io import StringIO
 from datetime import datetime
 from collections import deque
 
-__version__ = "0.1"
+__version__ = "0.2"
 __all__ = ['MCS_RCV_BYTES', 'getTime', 'Communicate', 'ReferenceServer'] 
 
 
@@ -245,10 +241,7 @@ class Communicate(object):
         payload = "%3s%3s%3s%9i" % (destination, sender, command, reference)
         payload = payload + "%4i%6i%9i" % (len(data)+8, mjd, mpm)
         payload = payload + ' ' + response + ("%7s" % systemStatus) + data
-        try:
-            payload = bytes(payload, 'ascii')
-        except TypeError:
-            pass
+        payload = payload.encode()
             
         try:
             if address is None:
@@ -278,11 +271,8 @@ class Communicate(object):
         """
         
         data, address = data
-        try:
-            data = data.decode('ascii')
-        except AttributeError:
-            pass
-            
+        data = data.decode()
+        
         destination = data[:3]
         sender      = data[3:6]
         command     = data[6:9]
@@ -382,10 +372,7 @@ class ReferenceServer(object):
                         self.logger.error('_generator: error on recv: %s', str(e))
                         continue
                     if message == b'next_ref':
-                        try:
-                            payload = bytes("%i" % i, 'ascii')
-                        except TypeError:
-                            payload = b"%i" % i
+                        payload = b"%i" % i
                         try:
                             socket.send(payload)
                         except zmq.ZMQError as e:

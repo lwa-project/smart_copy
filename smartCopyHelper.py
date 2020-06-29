@@ -1,7 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-from __future__ import print_function
+#!/usr/bin/env python3
 
 import os
 import re
@@ -16,12 +13,7 @@ from datetime import datetime
 
 from zeroconf import Zeroconf
 
-from lsl.common import mcs, metabundle
-try:
-    from lsl.common import metabundleADP
-    adpReady = True
-except ImportError:
-    adpReady = False
+from lsl.common import mcs, metabundle, metabundleADP
 
 
 SITE = socket.gethostname().split('-', 1)[0]
@@ -46,11 +38,8 @@ def parseMetadata(tarname):
         parser = metabundle
         parser.get_session_spec(tarname)
     except Exception as e:
-        if adpReady:
-            parser = metabundleADP
-            parser.get_session_spec(tarname)
-        else:
-            raise e
+        parser = metabundleADP
+        parser.get_session_spec(tarname)
             
     project = parser.get_sdf(tarname)
     isSpec = False
@@ -88,13 +77,10 @@ def getDRSUPath(beam, barcode):
     
     try:
         p = subprocess.Popen(['ssh', "mcsdr@dr%s" % beam, 'mount', '-l', '-t', 'ext4'], cwd='/home/op1/MCS/tp', stdin=None, stdout=subprocess.PIPE)
-        p.wait()
+        output, _ = p.communicate()
+        output = output.decode()
         
-        for line in iter(p.stdout.readline, ''):
-            try:
-                line = line.decode('ascii')
-            except AttributeError:
-                pass
+        for line in output.split('\n'):
             line = line.split()
             try:
                 if line[6]==("['%s']" % (barcode)):
@@ -334,17 +320,11 @@ def main(args):
             
             if inf[:4] != 'Copy':
                 ## Standard SmartCopy commands
-                try:
-                    cmd = bytes(cmd, 'ascii')
-                except TypeError:
-                    pass
+                cmd = cmd.encode()
                 sockOut.sendto(cmd, (outHost, outPort))
                 data, address = sockIn.recvfrom(MCS_RCV_BYTES)
                 
-                try:
-                    data = data.decode('ascii')
-                except AttributeError:
-                    pass
+                data = data.decode()
                 cStatus, sStatus, info = parsePayload(data)
                 info = info.split('\n')
                 if len(info) == 1:

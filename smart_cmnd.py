@@ -1,7 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-from __future__ import print_function
+#!/usr/bin/env python3
 
 import os
 import re
@@ -19,16 +16,13 @@ try:
 except ImportError:
     from logging import FileHandler as WatchedFileHandler
 import traceback
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from io import StringIO
+from io import StringIO
 from collections import deque
 
 from MCS import *
 from smartFunctions import SmartCopy
 
-__version__ = '0.2'
+__version__ = '0.3'
 __all__ = ['MCSCommunicate',]
 
 #

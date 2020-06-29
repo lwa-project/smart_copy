@@ -1,14 +1,10 @@
-# -*- coding: utf-8 -*-
 
 import os
 import re
 import sys
 import time
 import uuid
-try:
-    import Queue
-except ImportError:
-    import queue as Queue
+import queue as Queue
 import select
 import pickle
 import warnings
@@ -16,15 +12,12 @@ import threading
 import traceback
 import subprocess
 import logging
-try:
-    import cStringIO as StringIO
-except ImportError:
-    from io import StringIO
+from io import StringIO
 from socket import gethostname
 
 from collections import OrderedDict
 
-__version__ = '0.2'
+__version__ = '0.3'
 __all__ = ['SerialNumber', 'LimitedSizeDict', 'DiskBackedQueue', 
            'InterruptibleCopy', 'DELETE_MARKER_QUEUE', 'DELETE_MARKER_NOW']
 
@@ -93,7 +86,7 @@ class DiskBackedQueue(Queue.Queue):
     insure continuity between power outages.
     """
     
-    _sep = '<<%>>'
+    _sep = b'<<%>>'
     
     def __init__(self, filename, maxsize=0, restore=True):
         self._filename = filename
@@ -106,14 +99,10 @@ class DiskBackedQueue(Queue.Queue):
             if restore:
                 if os.path.exists(self._filename):
                     if os.path.getsize(self._filename) > 0:
-                        with open(self._filename, 'r') as fh:
+                        with open(self._filename, 'rb') as fh:
                             contents = fh.read()
                         contents = contents.split(self._sep)
                         for i,entry in enumerate(contents):
-                            try:
-                                entry = bytes(entry, 'ascii')
-                            except TypeError:
-                                pass
                             try:
                                 item = pickle.loads(entry)
                                 ## Try to avoid ID collisions across restarts
@@ -138,7 +127,7 @@ class DiskBackedQueue(Queue.Queue):
     def _queue_file_io(self, put=None, task_done=False):
         with self._lock:
             try:
-                with open(self._filename, 'r') as fh:
+                with open(self._filename, 'rb') as fh:
                     contents = fh.read()
                 contents = contents.split(self._sep)
             except (OSError, IOError):
@@ -146,16 +135,12 @@ class DiskBackedQueue(Queue.Queue):
                 
             if put is not None:
                 put = pickle.dumps(put, protocol=0)
-                try:
-                    put = put.decode('ascii')
-                except AttributeError:
-                    pass
                 contents.insert(0, put)
-                with open(self._filename, 'w') as fh:
+                with open(self._filename, 'wb') as fh:
                     fh.write(self._sep.join(contents))
             elif task_done:
                 contents = contents[:-1]
-                with open(self._filename, 'w') as fh:
+                with open(self._filename, 'wb') as fh:
                     fh.write(self._sep.join(contents))
                     
     def put(self, item, block=True, timeout=None):
@@ -252,10 +237,7 @@ class InterruptibleCopy(object):
         try:
             with open('/dev/null', 'w+b') as devnull:
                 output = subprocess.check_output(cmd, stderr=devnull)
-            try:
-                output = output.decode('ascii')
-            except AttributeError:
-                pass
+            output = output.decode()
             junk = output.split(None, 1)[0]
             exists = True
         except (subprocess.CalledProcessError, IndexError):
@@ -280,10 +262,7 @@ class InterruptibleCopy(object):
             try:
                 with open('/dev/null', 'w+b') as devnull:
                     output = subprocess.check_output(cmd, stderr=devnull)
-                try:
-                    output = output.decode('ascii')
-                except AttributeError:
-                    pass
+                output = output.decode()
                 self._size = output.split(None, 1)[0]
             except subprocess.CalledProcessError:
                 self._size = '0'
@@ -574,10 +553,7 @@ class InterruptibleCopy(object):
                 if self.process.poll() is None:
                     try:
                         new_text = self.process.stdout.read(1)
-                        try:
-                            new_text = new_text.decode('ascii')
-                        except AttributeError:
-                            pass
+                        new_text = new_text.decode()
                         stdout += new_text
                     except ValueError:
                         break
@@ -650,10 +626,7 @@ class InterruptibleCopy(object):
                 if self.process.poll() is None:
                     try:
                         new_text = self.process.stdout.read(1)
-                        try:
-                            new_text = new_text.decode('ascii')
-                        except AttributeError:
-                            pass
+                        new_text = new_text.decode()
                         stdout += new_text
                     except ValueError:
                         break

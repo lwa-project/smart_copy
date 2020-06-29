@@ -1,28 +1,22 @@
-# -*- coding: utf-8 -*-
+
 import os
 import re
 import sys
 import copy
 import time
 import uuid
-try:
-    import Queue
-except ImportError:
-    import queue as Queue
+import queue as Queue
 import select
 import socket
 import threading
 import traceback
 import subprocess
 import logging
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from io import StringIO
+from io import StringIO
 
 from smartCommon import *
 
-__version__ = "0.2"
+__version__ = "0.3"
 __all__ = ['MonitorStation', 'ManageDR']
 
 
@@ -105,10 +99,7 @@ class MonitorStation(object):
         # Walk through the lines
         for line in lines:
             ## Parse the line
-            try:
-                line = line.decode('ascii', errors='ignore')
-            except AttributeError:
-                pass
+            line = line.decode()
             fields = line.split(None, 9)
             try:
                 rid = int(fields[5], 10)			# MCS reference ID
@@ -597,10 +588,7 @@ class ManageDR(object):
         try:
             with open('/dev/null', 'w+b') as devnull:
                 totalSize = subprocess.check_output(['awk', "{sum+=$1} END {print sum}", logname], stderr=devnull)
-            try:
-                totalSize = totalSize.decode('ascii')
-            except AttributeError:
-                pass
+            totalSize = totalSize.decode()
             totalSize = int(totalSize, 10)
         except (subprocess.CalledProcessError, ValueError):
             totalSize = 0

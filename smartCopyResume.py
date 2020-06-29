@@ -1,8 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-from __future__ import print_function
-
+#!/usr/bin/env python3
 import os
 import sys
 import math
@@ -125,17 +121,11 @@ def main(args):
         sockIn.settimeout(5)
         
         for cmd in cmds:
-            try:
-                cmd = bytes(cmd, 'ascii')
-            except TypeError:
-                pass
+            cmd = cmd.encode()
             sockOut.sendto(cmd, (outHost, outPort))
             data, address = sockIn.recvfrom(MCS_RCV_BYTES)
             
-            try:
-                data = data.decode('ascii')
-            except AttributeError:
-                pass
+            data = data.decode()
             cStatus, sStatus, info = parsePayload(data)
             info = info.split('\n')
             if len(info) == 1:
