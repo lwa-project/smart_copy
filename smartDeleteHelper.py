@@ -239,7 +239,7 @@ def main(args):
                 
             srcPath= "%s:%s/DROS/%s/%s" % (inHost, drPath, 'Spec' if isSpec else 'Rec', filetag)
             
-            yesno = raw_input("remove %s? " % srcPath)
+            yesno = input("remove %s? " % srcPath)
             if yesno.lower() not in ('y', 'yes'):
                 ### Update the done list
                 _done.append( filetag )
