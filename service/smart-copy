@@ -12,7 +12,9 @@
 . /lib/lsb/init-functions
 
 SERVICE_NAME='smart-copy'
+EXEC_USER='op1'
 EXEC_PATH='/home/op1/SmartCopy'
+EXEC_OPTS='-d -l runtime.log'
 
 check_self() {
 	output=`service $SERVICE_NAME status`
@@ -53,7 +55,7 @@ start() {
 	check_mcs_exec
 	save_runtime_log
 	logfile=`tempfile -p smart-copy-`
-	if su op1 -c "cd $EXEC_PATH && screen -d -m -S SmartCopy ./smart_cmnd.py -d -l runtime.log" > $logfile 2>&1; then
+	if su $EXEC_USER -c "cd $EXEC_PATH && screen -d -m -S SmartCopy ./smart_cmnd.py $EXEC_OPTS" > $logfile 2>&1; then
 		log_end_msg 0 || true
 	else
 		log_end_msg 1 || true
@@ -65,7 +67,7 @@ start() {
 stop() {
 	log_daemon_msg "Stopping SmartCopy"
 	logfile=`tempfile -p smart-copy-`
-	if su op1 -c "ps aux | grep 'smart_cmnd.py' | grep -v grep | grep -v -i screen | awk '{print \$2}' | xargs kill" > $logfile 2>&1; then
+	if su $EXEC_USER -c "ps aux | grep 'smart_cmnd.py' | grep -v grep | grep -v -i screen | awk '{print \$2}' | xargs kill" > $logfile 2>&1; then
 		sleep 60
 		save_runtime_log
 		log_end_msg 0 || true
