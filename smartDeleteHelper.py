@@ -19,7 +19,7 @@ from lsl.common import mcs, metabundle, metabundleADP
 SITE = socket.gethostname().split('-', 1)[0]
 
 
-_usernameRE = re.compile(r'ucfuser:[ \t]*(?P<username>[a-zA-Z1]+)(\/(?P<subdir>[a-zA-Z0-9\/\+\-_]+))?')
+_usernameRE = re.compile(r'ucfuser:[ \t]*(?P<username>[a-zA-Z0-9_]+)(\/(?P<subdir>[a-zA-Z0-9\/\+\-_]+))?')
 
 
 def parseMetadata(tarname):
