@@ -13,13 +13,10 @@ from datetime import datetime
 
 from zeroconf import Zeroconf
 
-from lsl.common import mcs, metabundle, metabundleADP
+from lsl.common import sdf, mcs, metabundle, metabundleADP
 
 
 SITE = socket.gethostname().split('-', 1)[0]
-
-
-_usernameRE = re.compile(r'ucfuser:[ \t]*(?P<username>[a-zA-Z0-9_]+)(\/(?P<subdir>[a-zA-Z0-9\/\+\-_]+))?')
 
 
 def parseMetadata(tarname):
@@ -57,7 +54,7 @@ def parseMetadata(tarname):
     
     userpath = None
     if project.sessions[0].data_return_method == 'UCF':
-        mtch = _usernameRE.search(project.sessions[0].comments)
+        mtch = sdf.UCF_USERNAME_RE.search(project.sessions[0].comments)
         if mtch is not None:
             userpath = mtch.group('username')
             if mtch.group('subdir') is not None:
