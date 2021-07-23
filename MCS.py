@@ -7,6 +7,7 @@ MCSCommunicate.processCommand() function to deal with the subsystem-specific
 MIBs and commands.
 """
 
+import os
 import sys
 import zmq
 import math
@@ -359,11 +360,11 @@ class ReferenceServer(object):
                 ref = int(fh.read(), 10)
                 
             ref += 10
-            if i > 999999999:
-                i = 1
+            if ref > 999999999:
+                ref = 1
                 
         while self.alive.isSet():
-            self.logger.info('_generator: starting with ID %i' % i)
+            self.logger.info('_generator: starting with ID %i' % ref)
             
             context = zmq.Context()
             socket = context.socket(zmq.REP)
@@ -382,24 +383,24 @@ class ReferenceServer(object):
                             self.logger.error('_generator: error on recv, restarting: %s', str(e))
                             break
                         if message == b'next_ref':
-                            payload = b"%i" % i
+                            payload = b"%i" % ref
                             try:
                                 socket.send(payload)
                             except zmq.ZMQError as e:
                                 self.logger.error('_generator: error on send: %s', str(e))
                                 continue
                                 
-                            i += 1
-                            if i > 999999999:
-                                i = 1
+                            ref += 1
+                            if ref > 999999999:
+                                ref = 1
                                 
-                            if i % 10 == 0:
+                            if ref % 10 == 0:
                                 with open('.sc_reference_id', 'w') as fh:
-                                    fh.write("%i" % i)
+                                    fh.write("%i" % ref)
                                     
             poller.unregister(socket)
             socket.close()
             context.term()
             
             with open('.sc_reference_id', 'w') as fh:
-                fh.write("%i" % i)
+                fh.write("%i" % ref)
