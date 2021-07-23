@@ -352,7 +352,7 @@ class ReferenceServer(object):
             
             self.logger.info('Stopped the reference number server')
             
-    def _generator(self, timeout=10):
+    def _generator(self, timeout=5):
         ref = 1
         if os.path.exists('.sc_reference_id'):
             with open('.sc_reference_id', 'r') as fh:
