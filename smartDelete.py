@@ -51,9 +51,12 @@ def buildPayload(source, cmd, data=None, refSocket=None):
     if refSocket is None:
         ref = 1
     else:
-        refSocket.send(b"next_ref")
-        ref = int(refSocket.recv(), 10)
-        
+        try:
+            refSocket.send(b"next_ref")
+            ref = int(refSocket.recv(), 10)
+        except zmq.ZMQError as e:
+            raise RuntimeError("Cannot access reference ID server: %s" % str(e))
+            
     mjd, mpm = getTime()
     
     payload = ''
@@ -112,6 +115,7 @@ def main(args):
     context = zmq.Context()
     sockRef = context.socket(zmq.REQ)
     sockRef.connect("tcp://%s:%i" % (outHost, refPort))
+    sockRef.setsockopt(zmq.RCVTIMEO, 5000)
     
     infs = []
     cmds = []
