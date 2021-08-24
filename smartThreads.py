@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import copy
+import glob
 import time
 import uuid
 import queue as Queue
@@ -14,10 +15,13 @@ import subprocess
 import logging
 from io import StringIO
 
+import smtplib
+from email.mime.text import MIMEText
+
 from smartCommon import *
 
-__version__ = "0.3"
-__all__ = ['MonitorStation', 'ManageDR']
+__version__ = "0.4"
+__all__ = ['MonitorStation', 'ManageDR', 'MonitorErrorLogs']
 
 
 smartThreadsLogger = logging.getLogger('__main__')
@@ -31,6 +35,9 @@ sng = SerialNumber()
 
 # Remote copy lock to help ensure that there is only one remove transfer at at time
 rcl = threading.Semaphore()
+
+# Error log lock
+ell = threading.Semaphore()
 
 
 class MonitorStation(object):
@@ -363,9 +370,11 @@ class ManageDR(object):
                             if self.active.getTryCount() >= 7:
                                 ### No, it's failed too many times.  Save it to the 'error' log
                                 fsize = self.active.getFileSize()
+                                ell.acquire()
                                 fh = open('error_%s.log' % self.dr, 'a')
                                 fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
                                 fh.close()
+                                ell.release()
                                 
                             else:
                                 ### There's still a chance.  Stick it in again
@@ -640,4 +649,136 @@ class ManageDR(object):
         else:
             ## Skip the cleanup
             return False
+
+
+
+class ManageErrorLogs(object):
+    def __init__(self):
+        # Setup threading
+        self.thread = None
+        self.alive = threading.Event()
+        self.alive.clear()
+        self.lastError = None
+        
+        # Activity
+        self.active = None
+        self.thread = None
+        
+        # Setup e-mail access
+        ## SMTP user and password
+        self.FROM = 'lwa.station.1@gmail.com'
+        if SITE == 'lwasv':
+            self.FROM = 'lwa.station.sv@gmail.com'
+        self.PASS = '1mJy4LWA'
+        
+    def start(self):
+        """
+        Start the station monitoring thread.
+        """
+        
+        if self.thread is not None:
+            self.stop()
+            
+        self.thread = threading.Thread(target=self.monitorLog, name='monitorLogs')
+        self.thread.setDaemon(1)
+        self.alive.set()
+        self.thread.start()
+        time.sleep(1)
+        
+        smartThreadsLogger.info('Started smart copy error log monitor')
+        
+    def stop(self):
+        """
+        Stop the station monitoring thread.
+        """
+        
+        if self.thread is not None:
+            self.alive.clear()          #clear alive event for thread
+            
+            self.thread.join()          #don't wait too long on the thread to finish
+            self.thread = None
+            self.lastError = None
+            
+            smartThreadsLogger.info('Stopped smart copy error log monitor')
+            
+    def monitorLogs(self):
+        # Checks run even later in the day (22:00 UTC)
+        tLastCheck = (int(time.time())/86400)*86400 + 22*3600
+        
+        while self.alive.isSet():
+            tStart = time.time()
+            
+            # Failure complination
+            failures = {}
+            
+            # Error logs
+            filenames = glob.glob('error_*.log')
+            filenames.sort()
+            for filename in filenames:
+                dr = os.path.basename(filename)
+                dr = os.path.splitext(dr)[0]
+                dr = dr.rsplit('_', 1)[1]
+                
+                ell.acquire()
+                to_keep = []
+                with open(filename, 'r') as fh:
+                    contents = fh.read()
+                    
+                lines = contents.split('\n')
+                for line in lines:
+                    if len(lines) < 3:
+                        continue
+                    try:
+                        timestamp, fsize, dataname = line.split(None, 2)
+                    except ValueError:
+                        # Catch for old format logs
+                        timestamp = '0'
+                        fsize, dataname = line.split(None, 1)
+                    timestamp = int(timestamp, 10)
+                    fsize = int(fsize, 10)
+                    
+                    if timestamp >= tStart - 86400 - 3600:
+                        to_keep.append(line)
+                        
+                        if fsize > 0:
+                            try:
+                                failures[dr].append(dataname)
+                            except KeyError:
+                                failures[dr] = [dataname,]
+                                
+                with open(filename, 'w') as fh:
+                    fh.write('\n'.join(to_keep))
+                    
+                ell.release()
+                
+            # Report 
+            report = ''
+            for dr in failures:
+                report += '%s:' % dr
+                for dataname in failures[dr]:
+                    report += '  %s' % dataname
+                    
+            # Send, if needed
+            if len(report) > 0:
+                to = ['jdowell@unm.edu',]
+                
+                msg = MIMEText(report)
+                msg['Subject'] = 'Daily SmartCopy Failures'
+                msg['From'] = self.FROM
+                msg['To'] = ','.join(to)
+                msg.add_header('reply-to', 'lwa1ops-l@list.unm.edu')
+                
+                rcpt = []
+                rcpt.extend(to)
+        
+                server = smtplib.SMTP('smtp.gmail.com', 587)
+                server.starttls()
+                server.login(self.FROM, self.PASS)
+                server.sendmail(self.FROM, rcpt, msg.as_string())
+                server.close()
+                
+            # Sleep
+            tLastCheck = time.time()
+            while self.alive.isSet() and time.time() - tLastCheck < 86400:
+                time.sleep(5)
             
