@@ -357,26 +357,23 @@ class ManageDR(object):
                                 if self.active.isRemote():
                                     if self.active.dest.find('leo10g.unm.edu') != -1:
                                         fsize = self.active.getFileSize()
-                                        fh = open('completed_%s.log' % self.dr, 'a')
-                                        fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
-                                        fh.close()
+                                        with open('completed_%s.log' % self.dr, 'a') as fh:
+                                            fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
+                                            
                             else:
                                 fsize = self.active.getFileSize()
-                                fh = open('completed_%s.log' % self.dr, 'a')
-                                fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
-                                fh.close()
-                                
+                                with open('completed_%s.log' % self.dr, 'a') as fh:
+                                    fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
+                                    
                         elif self.active.isFailed():
                             ## No, but let's see we we can save it
                             if self.active.getTryCount() >= 7:
                                 ### No, it's failed too many times.  Save it to the 'error' log
                                 fsize = self.active.getFileSize()
-                                ell.acquire()
-                                fh = open('error_%s.log' % self.dr, 'a')
-                                fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
-                                fh.close()
-                                ell.release()
-                                
+                                with ell:
+                                    with open('error_%s.log' % self.dr, 'a') as fh:
+                                        fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
+                                        
                             else:
                                 ### There's still a chance.  Stick it in again
                                 self.queue.put(self.active.getTaskSpecification())
@@ -609,9 +606,8 @@ class ManageDR(object):
             
             ## Run the cleanup
             ### Load the files to purge
-            fh = open(logname, 'r')
-            lines = fh.read()
-            fh.close()
+            with open(logname, 'r') as fh:
+                lines = fh.read()
             ### Zero out the purge list
             os.unlink(logname)
             
@@ -638,11 +634,10 @@ class ManageDR(object):
                     
             ### If there are files that we were unable to transfer, save them for later
             if len(retry) > 0:
-                fh = open(logname, 'w')
-                for fsize,filename in retry:
-                    fh.write('%s %s %s\n' % (timestamp, fsize, filename))
-                fh.close()
-                
+                with open(logname, 'w') as fh:
+                    for timestamp,fsize,filename in retry:
+                        fh.write('%s %s %s\n' % (timestamp, fsize, filename))
+                        
                 return False
                 
             return True
@@ -650,7 +645,6 @@ class ManageDR(object):
         else:
             ## Skip the cleanup
             return False
-
 
 
 class MonitorErrorLogs(object):
@@ -717,42 +711,44 @@ class MonitorErrorLogs(object):
                 filenames = glob.glob('error_*.log')
                 filenames.sort()
                 for filename in filenames:
+                    ## DR name
                     dr = os.path.basename(filename)
                     dr = os.path.splitext(dr)[0]
                     dr = dr.rsplit('_', 1)[1]
                     
-                    ell.acquire()
-                    to_keep = []
-                    with open(filename, 'r') as fh:
-                        contents = fh.read()
-                        
-                    lines = contents.split('\n')
-                    for line in lines:
-                        if len(line) < 3:
-                            continue
-                        try:
-                            timestamp, fsize, dataname = line.split(None, 2)
-                        except ValueError:
-                            # Catch for old format logs
-                            timestamp = '0'
-                            fsize, dataname = line.split(None, 1)
-                        timestamp = int(timestamp, 10)
-                        fsize = int(fsize, 10)
-                        
-                        if timestamp >= tStart - 86400 - 3600:
-                            to_keep.append(line)
+                    ## Parse to figure out which lines to keep
+                    with ell:
+                        ### Load
+                        with open(filename, 'r') as fh:
+                            contents = fh.read()
                             
-                            if fsize > 0:
-                                try:
-                                    failures[dr].append(dataname)
-                                except KeyError:
-                                    failures[dr] = [dataname,]
-                                    
-                    with open(filename, 'w') as fh:
-                        fh.write('\n'.join(to_keep))
-                        
-                    ell.release()
-                    
+                        ### Sort
+                        to_keep = []
+                        for line in contents.split('\n'):
+                            if len(line) < 3:
+                                continue
+                            try:
+                                timestamp, fsize, dataname = line.split(None, 2)
+                            except ValueError:
+                                # Catch for old format logs
+                                timestamp = '0'
+                                fsize, dataname = line.split(None, 1)
+                            timestamp = int(timestamp, 10)
+                            fsize = int(fsize, 10)
+                            
+                            if timestamp >= tStart - 86400 - 3600:
+                                to_keep.append(line)
+                                
+                                if fsize > 0:
+                                    try:
+                                        failures[dr].append(dataname)
+                                    except KeyError:
+                                        failures[dr] = [dataname,]
+                                        
+                        ### Save
+                        with open(filename, 'w') as fh:
+                            fh.write('\n'.join(to_keep))
+                            
                 # Report 
                 report = ''
                 for dr in sorted(list(failures.keys())):
@@ -762,12 +758,16 @@ class MonitorErrorLogs(object):
                         
                 # Send the report as an email, if there is anything to send
                 if len(report) > 0:
+                    ## A copy for the logs
                     for line in report.split('\n'):
                         smartThreadsLogger.debug("%s", line)
                         
+                    ## The message itself
+                    ### Who gets it
                     to = ['jdowell@unm.edu',]
                     cc = None
                     
+                    ### The report
                     msg = MIMEText(report)
                     msg['Subject'] = 'Recent SmartCopy Failures - %s' % (datetime.utcnow().strftime("%Y/%m/%d"),)
                     msg['From'] = self.FROM
@@ -777,11 +777,13 @@ class MonitorErrorLogs(object):
                         msg['Cc'] = ','.join(cc)
                     msg.add_header('reply-to', 'lwa1ops-l@list.unm.edu')
                     
+                    ### The other who gets it
                     rcpt = []
                     rcpt.extend(to)
                     if cc is not None:
                         rcpt.extend(cc)
                         
+                    ## Send it off
                     try:
                         server = smtplib.SMTP('smtp.gmail.com', 587)
                         server.starttls()
