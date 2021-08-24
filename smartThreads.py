@@ -350,12 +350,12 @@ class ManageDR(object):
                                     if self.active.dest.find('leo10g.unm.edu') != -1:
                                         fsize = self.active.getFileSize()
                                         fh = open('completed_%s.log' % self.dr, 'a')
-                                        fh.write('%s %s\n' % (fsize, self.active.hostpath))
+                                        fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
                                         fh.close()
                             else:
                                 fsize = self.active.getFileSize()
                                 fh = open('completed_%s.log' % self.dr, 'a')
-                                fh.write('%s %s\n' % (fsize, self.active.hostpath))
+                                fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
                                 fh.close()
                                 
                         elif self.active.isFailed():
@@ -364,7 +364,7 @@ class ManageDR(object):
                                 ### No, it's failed too many times.  Save it to the 'error' log
                                 fsize = self.active.getFileSize()
                                 fh = open('error_%s.log' % self.dr, 'a')
-                                fh.write('%s %s\n' % (fsize, self.active.hostpath))
+                                fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
                                 fh.close()
                                 
                             else:
@@ -609,16 +609,20 @@ class ManageDR(object):
             entries = lines.split('\n')[:-1]
             retry, failed = [], []
             for entry in entries:
-                fsize, filename = entry.split(None, 1)
+                try:
+                    timestamp, fsize, filename = entry.split(None, 2)
+                except ValueError:
+                    timestamp = '0'
+                    fsize, filename = entry.split(None, 1)
                 try:
                     assert(not self.inhibit)
                     with open('/dev/null', 'w+b') as devnull:
                         subprocess.check_output(['ssh', '-t', '-t', 'mcsdr@%s' % self.dr, 'shopt -s huponexit && sudo rm -f %s' % filename], stderr=devnull)
                     smartThreadsLogger.info('Removed %s:%s of size %s', self.dr, filename, fsize)
                 except AssertionError:
-                    retry.append( (fsize, filename) )
+                    retry.append( (timestamp, fsize, filename) )
                 except subprocess.CalledProcessError as e:
-                    failed.append( (fsize, filename) )
+                    failed.append( (timestamp, fsize, filename) )
                     smartThreadsLogger.warning('Failed to remove %s:%s of size %s', self.dr, filename, fsize)
                     smartThreadsLogger.debug('%s', str(e))
                     
@@ -626,7 +630,7 @@ class ManageDR(object):
             if len(retry) > 0:
                 fh = open(logname, 'w')
                 for fsize,filename in retry:
-                    fh.write('%s %s\n' % (fsize, filename))
+                    fh.write('%s %s %s\n' % (timestamp, fsize, filename))
                 fh.close()
                 
                 return False
