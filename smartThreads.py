@@ -679,7 +679,7 @@ class MonitorErrorLogs(object):
         if self.thread is not None:
             self.stop()
             
-        self.thread = threading.Thread(target=self.monitorLog, name='monitorLogs')
+        self.thread = threading.Thread(target=self.monitorLogs, name='monitorLogs')
         self.thread.setDaemon(1)
         self.alive.set()
         self.thread.start()
