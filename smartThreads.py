@@ -14,6 +14,7 @@ import traceback
 import subprocess
 import logging
 from io import StringIO
+from datetime import datetime
 
 import smtplib
 from email.mime.text import MIMEText
@@ -708,77 +709,91 @@ class MonitorErrorLogs(object):
         while self.alive.isSet():
             tStart = time.time()
             
-            # Failure complination
-            failures = {}
-            
-            # Error logs
-            filenames = glob.glob('error_*.log')
-            filenames.sort()
-            for filename in filenames:
-                dr = os.path.basename(filename)
-                dr = os.path.splitext(dr)[0]
-                dr = dr.rsplit('_', 1)[1]
+            if tStart - tLastCheck >= 86400:
+                # Failure complination
+                failures = {}
                 
-                ell.acquire()
-                to_keep = []
-                with open(filename, 'r') as fh:
-                    contents = fh.read()
+                # Error logs
+                filenames = glob.glob('error_*.log')
+                filenames.sort()
+                for filename in filenames:
+                    dr = os.path.basename(filename)
+                    dr = os.path.splitext(dr)[0]
+                    dr = dr.rsplit('_', 1)[1]
                     
-                lines = contents.split('\n')
-                for line in lines:
-                    if len(line) < 3:
-                        continue
-                    try:
-                        timestamp, fsize, dataname = line.split(None, 2)
-                    except ValueError:
-                        # Catch for old format logs
-                        timestamp = '0'
-                        fsize, dataname = line.split(None, 1)
-                    timestamp = int(timestamp, 10)
-                    fsize = int(fsize, 10)
-                    
-                    if timestamp >= tStart - 86400 - 3600:
-                        to_keep.append(line)
+                    ell.acquire()
+                    to_keep = []
+                    with open(filename, 'r') as fh:
+                        contents = fh.read()
                         
-                        if fsize > 0:
-                            try:
-                                failures[dr].append(dataname)
-                            except KeyError:
-                                failures[dr] = [dataname,]
-                                
-                with open(filename, 'w') as fh:
-                    fh.write('\n'.join(to_keep))
+                    lines = contents.split('\n')
+                    for line in lines:
+                        if len(line) < 3:
+                            continue
+                        try:
+                            timestamp, fsize, dataname = line.split(None, 2)
+                        except ValueError:
+                            # Catch for old format logs
+                            timestamp = '0'
+                            fsize, dataname = line.split(None, 1)
+                        timestamp = int(timestamp, 10)
+                        fsize = int(fsize, 10)
+                        
+                        if timestamp >= tStart - 86400 - 3600:
+                            to_keep.append(line)
+                            
+                            if fsize > 0:
+                                try:
+                                    failures[dr].append(dataname)
+                                except KeyError:
+                                    failures[dr] = [dataname,]
+                                    
+                    with open(filename, 'w') as fh:
+                        fh.write('\n'.join(to_keep))
+                        
+                    ell.release()
                     
-                ell.release()
-                
-            # Report 
-            report = ''
-            for dr in failures:
-                report += '%s:' % dr
-                for dataname in failures[dr]:
-                    report += '  %s' % dataname
+                # Report 
+                report = ''
+                for dr in sorted(list(failures.keys())):
+                    report += '%s:\n' % dr
+                    for dataname in failures[dr]:
+                        report += '  %s\n' % dataname
+                        
+                # Send the report as an email, if there is anything to send
+                if len(report) > 0:
+                    for line in report.split('\n'):
+                        smartThreadsLogger.debug("%s", line)
+                        
+                    to = ['jdowell@unm.edu',]
+                    cc = None
                     
-            # Send, if needed
-            if len(report) > 0:
-                to = ['jdowell@unm.edu',]
-                
-                msg = MIMEText(report)
-                msg['Subject'] = 'Daily SmartCopy Failures'
-                msg['From'] = self.FROM
-                msg['To'] = ','.join(to)
-                msg.add_header('reply-to', 'lwa1ops-l@list.unm.edu')
-                
-                rcpt = []
-                rcpt.extend(to)
-        
-                server = smtplib.SMTP('smtp.gmail.com', 587)
-                server.starttls()
-                server.login(self.FROM, self.PASS)
-                server.sendmail(self.FROM, rcpt, msg.as_string())
-                server.close()
+                    msg = MIMEText(report)
+                    msg['Subject'] = 'Recent SmartCopy Failures - %s' % (datetime.utcnow().strftime("%Y/%m/%d"),)
+                    msg['From'] = self.FROM
+                    msg['To'] = ','.join(to)
+                    if cc is not None:
+                        cc = list(set(cc))
+                        msg['Cc'] = ','.join(cc)
+                    msg.add_header('reply-to', 'lwa1ops-l@list.unm.edu')
+                    
+                    rcpt = []
+                    rcpt.extend(to)
+                    if cc is not None:
+                        rcpt.extend(cc)
+                        
+                    try:
+                        server = smtplib.SMTP('smtp.gmail.com', 587)
+                        server.starttls()
+                        server.login(self.FROM, self.PASS)
+                        server.sendmail(self.FROM, rcpt, msg.as_string())
+                        server.close()
+                    except Exception as e:
+                        smartThreadsLogger.error("Could not send error report e-mail: %s", str(e))
+                        
+                # Update the last check time
+                tLastCheck = time.time()
                 
             # Sleep
-            tLastCheck = time.time()
-            while self.alive.isSet() and time.time() - tLastCheck < 86400:
-                time.sleep(5)
+            time.sleep(5)
             
