@@ -652,7 +652,7 @@ class ManageDR(object):
 
 
 
-class ManageErrorLogs(object):
+class MonitorErrorLogs(object):
     def __init__(self):
         # Setup threading
         self.thread = None
