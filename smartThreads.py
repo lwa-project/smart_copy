@@ -726,7 +726,7 @@ class MonitorErrorLogs(object):
                     
                 lines = contents.split('\n')
                 for line in lines:
-                    if len(lines) < 3:
+                    if len(line) < 3:
                         continue
                     try:
                         timestamp, fsize, dataname = line.split(None, 2)
