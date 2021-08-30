@@ -372,7 +372,11 @@ class ManageDR(object):
                                 fsize = self.active.getFileSize()
                                 with ell:
                                     with open('error_%s.log' % self.dr, 'a') as fh:
-                                        fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
+                                        fh.write('%.0f %s %s -> %s with %s\n' % (time.time(),
+                                                                                 fsize,
+                                                                                 self.active.hostpath,
+                                                                                 self.active.destpath,
+                                                                                 self.active.status))
                                         
                             else:
                                 ### There's still a chance.  Stick it in again
