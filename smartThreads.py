@@ -598,7 +598,7 @@ class ManageDR(object):
         # Get how many lines are in the logfile
         try:
             with open('/dev/null', 'w+b') as devnull:
-                totalSize = subprocess.check_output(['awk', "{sum+=$1} END {print sum}", logname], stderr=devnull)
+                totalSize = subprocess.check_output(['awk', "{sum+=$2} END {print sum}", logname], stderr=devnull)
             totalSize = totalSize.decode()
             totalSize = int(totalSize, 10)
         except (subprocess.CalledProcessError, ValueError):
@@ -619,11 +619,7 @@ class ManageDR(object):
             entries = lines.split('\n')[:-1]
             retry, failed = [], []
             for entry in entries:
-                try:
-                    timestamp, fsize, filename = entry.split(None, 2)
-                except ValueError:
-                    timestamp = '0'
-                    fsize, filename = entry.split(None, 1)
+                timestamp, fsize, filename = entry.split(None, 2)
                 try:
                     assert(not self.inhibit)
                     with open('/dev/null', 'w+b') as devnull:
@@ -731,12 +727,7 @@ class MonitorErrorLogs(object):
                         for line in contents.split('\n'):
                             if len(line) < 3:
                                 continue
-                            try:
-                                timestamp, fsize, dataname = line.split(None, 2)
-                            except ValueError:
-                                # Catch for old format logs
-                                timestamp = '0'
-                                fsize, dataname = line.split(None, 1)
+                            timestamp, fsize, dataname = line.split(None, 2)
                             timestamp = int(timestamp, 10)
                             fsize = int(fsize, 10)
                             
