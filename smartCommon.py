@@ -110,7 +110,7 @@ class DiskBackedQueue(Queue.Queue):
                                 ##        it doesn't update the ID in the file
                                 host, hostpath, dest, destpath, id, retries, lasttry = item
                                 if not isinstance(id, int):
-+                                    id = int(id, 10)
+                                    id = int(id, 10)
                                 if id < 1024:
                                     id += 1024
                                     item = (host, hostpath, dest, destpath, id, retries, lasttry)
