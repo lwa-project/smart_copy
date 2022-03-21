@@ -17,8 +17,7 @@ from lsl.common import mcs, metabundle, metabundleADP
 
 
 SITE = socket.gethostname().split('-', 1)[0]
-DEFAULT_PATH = '/data2/from_%s/' % SITE
-
+DEFAULT_PATH = '/FileStore/incoming/FOR_ARCHIVE/'
 
 _usernameRE = re.compile(r'ucfuser:[ \t]*(?P<username>[a-zA-Z1]+)(\/(?P<subdir>[a-zA-Z0-9\/\+\-_]+))?')
 
@@ -198,7 +197,7 @@ def main(args):
     
     infs = []
     cmds = []
-    destPath = 'mcsdr@leo10g.unm.edu:%s' % DEFAULT_PATH
+    destPath = 'mcsdr@lda10g.unm.edu:%s' % DEFAULT_PATH
     
     # Process the input files
     for filename in args.filename:
