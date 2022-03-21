@@ -7,6 +7,7 @@ MCSCommunicate.processCommand() function to deal with the subsystem-specific
 MIBs and commands.
 """
 
+import os
 import sys
 import zmq
 import math
@@ -352,35 +353,54 @@ class ReferenceServer(object):
             
             self.logger.info('Stopped the reference number server')
             
-    def _generator(self, timeout=10):
-        i = 1
-        
-        context = zmq.Context()
-        socket = context.socket(zmq.REP)
-        socket.bind("tcp://*:%i" % self.port)
-        
-        poller = zmq.Poller()
-        poller.register(socket, zmq.POLLIN)
-        
+    def _generator(self, timeout=5):
+        ref = 1
+        if os.path.exists('.sc_reference_id'):
+            with open('.sc_reference_id', 'r') as fh:
+                ref = int(fh.read(), 10)
+                
+            ref += 10
+            if ref > 999999999:
+                ref = 1
+                
         while self.alive.isSet():
-            message = dict(poller.poll(timeout*1000))
-            if message:
-                if message.get(socket) == zmq.POLLIN:
-                    try:
-                        message = socket.recv(zmq.NOBLOCK)
-                    except zmq.ZMQError as e:
-                        self.logger.error('_generator: error on recv: %s', str(e))
-                        continue
-                    if message == b'next_ref':
-                        payload = b"%i" % i
+            self.logger.info('_generator: starting with ID %i' % ref)
+            
+            context = zmq.Context()
+            socket = context.socket(zmq.REP)
+            socket.bind("tcp://*:%i" % self.port)
+            
+            poller = zmq.Poller()
+            poller.register(socket, zmq.POLLIN)
+            
+            while self.alive.isSet():
+                message = dict(poller.poll(timeout*1000))
+                if message:
+                    if message.get(socket) == zmq.POLLIN:
                         try:
-                            socket.send(payload)
+                            message = socket.recv(zmq.NOBLOCK)
                         except zmq.ZMQError as e:
-                            self.logger.error('_generator: error on send: %s', str(e))
-                            continue
-                        i += 1
-                        
-        poller.unregister(socket)
-        socket.close()
-        context.term()
-        
+                            self.logger.error('_generator: error on recv, restarting: %s', str(e))
+                            break
+                        if message == b'next_ref':
+                            payload = b"%i" % ref
+                            try:
+                                socket.send(payload)
+                            except zmq.ZMQError as e:
+                                self.logger.error('_generator: error on send: %s', str(e))
+                                continue
+                                
+                            ref += 1
+                            if ref > 999999999:
+                                ref = 1
+                                
+                            if ref % 10 == 0:
+                                with open('.sc_reference_id', 'w') as fh:
+                                    fh.write("%i" % ref)
+                                    
+            poller.unregister(socket)
+            socket.close()
+            context.term()
+            
+            with open('.sc_reference_id', 'w') as fh:
+                fh.write("%i" % ref)
