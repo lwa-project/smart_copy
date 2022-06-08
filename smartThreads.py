@@ -662,9 +662,10 @@ class MonitorErrorLogs(object):
         # Setup e-mail access
         ## SMTP user and password
         self.FROM = 'lwa.station.1@gmail.com'
+        self.PASS = 'srpnbdrdepzrkvmy'
         if SITE == 'lwasv':
             self.FROM = 'lwa.station.sv@gmail.com'
-        self.PASS = '1mJy4LWA'
+            self.PASS = 'wzdttrilphfosjnb'
         
     def start(self):
         """
