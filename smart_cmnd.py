@@ -22,7 +22,7 @@ from collections import deque
 from MCS import *
 from smartFunctions import SmartCopy
 
-__version__ = '0.3'
+__version__ = '0.4'
 __all__ = ['MCSCommunicate',]
 
 #
@@ -392,9 +392,12 @@ def main(args):
     logger.info('All dates and times are in UTC except where noted')
     
     # Set the site-dependant MESSAGEOUTHOST IP address
-    MESSAGEOUTHOST = "10.1.1.2"
-    if SITE == 'lwasv':
+    if SITE == 'lwa1':
+        MESSAGEOUTHOST = "10.1.1.2"
+    elif SITE == 'lwasv':
         MESSAGEOUTHOST = "10.1.2.2"
+    elif SITE == 'lwana':
+        MESSAGEOUTHOST = "10.1.3.2"
         
     # Setup the configuration and zeroconf
     config = {'MESSAGEINPORT': 5050, 'MESSAGEOUTPORT': 5051, 'MESSAGEREFPORT': 5052, 'MESSAGEOUTHOST': MESSAGEOUTHOST}
