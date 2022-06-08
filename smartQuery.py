@@ -52,9 +52,12 @@ def buildPayload(source, cmd, data=None, refSocket=None):
     if refSocket is None:
         ref = 1
     else:
-        refSocket.send(b"next_ref")
-        ref = int(refSocket.recv(), 10)
-        
+        try:
+            refSocket.send(b"next_ref")
+            ref = int(refSocket.recv(), 10)
+        except zmq.ZMQError as e:
+            raise RuntimeError("Cannot access reference ID server: %s" % str(e))
+            
     mjd, mpm = getTime()
     
     payload = ''
@@ -113,6 +116,7 @@ def main(args):
     context = zmq.Context()
     sockRef = context.socket(zmq.REQ)
     sockRef.connect("tcp://%s:%i" % (outHost, refPort))
+    sockRef.setsockopt(zmq.RCVTIMEO, 5000)
     
     infs = []
     cmds = []
@@ -160,7 +164,7 @@ if __name__ == "__main__":
     def mib(value):
         _queryRE = re.compile(r'(?P<name>[A-Z_]+)(?P<number>\d+)')
         _valid_names = ['OBSSTATUS_DR', 'QUEUE_SIZE_DR', 'QUEUE_STATUS_DR',
-                        'QUEUE_ENTRY', 'ACTIVE_ID_DR', 'ACTIVE_STATUS_DR',
+                        'QUEUE_ENTRY_', 'ACTIVE_ID_DR', 'ACTIVE_STATUS_DR',
                         'ACTIVE_BYTES_DR', 'ACTIVE_PROGRESS_DR', 
                         'ACTIVE_SPEED_DR', 'ACTIVE_REMAINING_DR']
         mtch = _queryRE.match(value)

@@ -9,7 +9,7 @@ from socket import gethostname
 
 from smartThreads import *
 
-__version__ = "0.2"
+__version__ = "0.3"
 __all__ = ['commandExitCodes', 'subsystemErrorCodes', 'SmartCopy']
 
 
@@ -60,6 +60,7 @@ class SmartCopy(object):
         ## Monitoring and background threads (antenna statistics, flags, etc.)
         self.currentState['pollingThread'] = None
         self.currentState['drThreads'] = None
+        self.currentState['errorThread'] = None
         
     def getState(self):
         """
@@ -117,12 +118,18 @@ class SmartCopy(object):
                 dr = 'DR%i' % i
                 self.currentState['drThreads'][dr] = ManageDR(dr, SCCallbackInstance=self)
                 self.globalInhibit[dr] = True
-                
+        ## Error log monitor
+        if self.currentState['errorThread'] is not None:
+            self.currentState['errorThread'].stop()
+        else:
+            self.currentState['errorThread'] = MonitorErrorLogs()
+            
         # Start all threads back up
         for dr in self.currentState['drThreads']:
             self.currentState['drThreads'][dr].start()
             self.resumeCopyQueue(dr, internal=True)
         self.currentState['pollingThread'].start()
+        self.currentState['errorThread'].start()
         
         self.currentState['status'] = 'NORMAL'
         self.currentState['info'] = 'System calibrated and operating normally'
@@ -173,7 +180,10 @@ class SmartCopy(object):
             for dr in self.currentState['drThreads']:
                 self.pauseCopyQueue(dr, internal=True)
                 self.currentState['drThreads'][dr].stop()
-                
+        ## Error log monitor
+        if self.currentState['errorThread'] is not None:
+            self.currentState['errorThread'].stop()
+            
         self.currentState['status'] = 'SHUTDWN'
         self.currentState['info'] = 'System has been shut down'
         self.currentState['lastLog'] = 'System has been shut down'

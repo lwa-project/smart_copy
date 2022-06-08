@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import copy
+import glob
 import time
 import uuid
 import queue as Queue
@@ -13,11 +14,15 @@ import traceback
 import subprocess
 import logging
 from io import StringIO
+from datetime import datetime
+
+import smtplib
+from email.mime.text import MIMEText
 
 from smartCommon import *
 
-__version__ = "0.3"
-__all__ = ['MonitorStation', 'ManageDR']
+__version__ = "0.4"
+__all__ = ['MonitorStation', 'ManageDR', 'MonitorErrorLogs']
 
 
 smartThreadsLogger = logging.getLogger('__main__')
@@ -31,6 +36,9 @@ sng = SerialNumber()
 
 # Remote copy lock to help ensure that there is only one remove transfer at at time
 rcl = threading.Semaphore()
+
+# Error log lock
+ell = threading.Semaphore()
 
 
 class MonitorStation(object):
@@ -349,24 +357,27 @@ class ManageDR(object):
                                 if self.active.isRemote():
                                     if self.active.dest.find('leo10g.unm.edu') != -1:
                                         fsize = self.active.getFileSize()
-                                        fh = open('completed_%s.log' % self.dr, 'a')
-                                        fh.write('%s %s\n' % (fsize, self.active.hostpath))
-                                        fh.close()
+                                        with open('completed_%s.log' % self.dr, 'a') as fh:
+                                            fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
+                                            
                             else:
                                 fsize = self.active.getFileSize()
-                                fh = open('completed_%s.log' % self.dr, 'a')
-                                fh.write('%s %s\n' % (fsize, self.active.hostpath))
-                                fh.close()
-                                
+                                with open('completed_%s.log' % self.dr, 'a') as fh:
+                                    fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
+                                    
                         elif self.active.isFailed():
                             ## No, but let's see we we can save it
                             if self.active.getTryCount() >= 7:
                                 ### No, it's failed too many times.  Save it to the 'error' log
                                 fsize = self.active.getFileSize()
-                                fh = open('error_%s.log' % self.dr, 'a')
-                                fh.write('%s %s\n' % (fsize, self.active.hostpath))
-                                fh.close()
-                                
+                                with ell:
+                                    with open('error_%s.log' % self.dr, 'a') as fh:
+                                        fh.write('%.0f %s %s -> %s with %s\n' % (time.time(),
+                                                                                 fsize,
+                                                                                 self.active.hostpath,
+                                                                                 self.active.destpath,
+                                                                                 self.active.status))
+                                        
                             else:
                                 ### There's still a chance.  Stick it in again
                                 self.queue.put(self.active.getTaskSpecification())
@@ -587,7 +598,7 @@ class ManageDR(object):
         # Get how many lines are in the logfile
         try:
             with open('/dev/null', 'w+b') as devnull:
-                totalSize = subprocess.check_output(['awk', "{sum+=$1} END {print sum}", logname], stderr=devnull)
+                totalSize = subprocess.check_output(['awk', "{sum+=$2} END {print sum}", logname], stderr=devnull)
             totalSize = totalSize.decode()
             totalSize = int(totalSize, 10)
         except (subprocess.CalledProcessError, ValueError):
@@ -599,9 +610,8 @@ class ManageDR(object):
             
             ## Run the cleanup
             ### Load the files to purge
-            fh = open(logname, 'r')
-            lines = fh.read()
-            fh.close()
+            with open(logname, 'r') as fh:
+                lines = fh.read()
             ### Zero out the purge list
             os.unlink(logname)
             
@@ -609,26 +619,25 @@ class ManageDR(object):
             entries = lines.split('\n')[:-1]
             retry, failed = [], []
             for entry in entries:
-                fsize, filename = entry.split(None, 1)
+                timestamp, fsize, filename = entry.split(None, 2)
                 try:
                     assert(not self.inhibit)
                     with open('/dev/null', 'w+b') as devnull:
                         subprocess.check_output(['ssh', '-t', '-t', 'mcsdr@%s' % self.dr, 'shopt -s huponexit && sudo rm -f %s' % filename], stderr=devnull)
                     smartThreadsLogger.info('Removed %s:%s of size %s', self.dr, filename, fsize)
                 except AssertionError:
-                    retry.append( (fsize, filename) )
+                    retry.append( (timestamp, fsize, filename) )
                 except subprocess.CalledProcessError as e:
-                    failed.append( (fsize, filename) )
+                    failed.append( (timestamp, fsize, filename) )
                     smartThreadsLogger.warning('Failed to remove %s:%s of size %s', self.dr, filename, fsize)
                     smartThreadsLogger.debug('%s', str(e))
                     
             ### If there are files that we were unable to transfer, save them for later
             if len(retry) > 0:
-                fh = open(logname, 'w')
-                for fsize,filename in retry:
-                    fh.write('%s %s\n' % (fsize, filename))
-                fh.close()
-                
+                with open(logname, 'w') as fh:
+                    for timestamp,fsize,filename in retry:
+                        fh.write('%s %s %s\n' % (timestamp, fsize, filename))
+                        
                 return False
                 
             return True
@@ -636,4 +645,153 @@ class ManageDR(object):
         else:
             ## Skip the cleanup
             return False
+
+
+class MonitorErrorLogs(object):
+    def __init__(self):
+        # Setup threading
+        self.thread = None
+        self.alive = threading.Event()
+        self.alive.clear()
+        self.lastError = None
+        
+        # Activity
+        self.active = None
+        self.thread = None
+        
+        # Setup e-mail access
+        ## SMTP user and password
+        self.FROM = 'lwa.station.1@gmail.com'
+        self.PASS = 'srpnbdrdepzrkvmy'
+        if SITE == 'lwasv':
+            self.FROM = 'lwa.station.sv@gmail.com'
+            self.PASS = 'wzdttrilphfosjnb'
+        
+    def start(self):
+        """
+        Start the station monitoring thread.
+        """
+        
+        if self.thread is not None:
+            self.stop()
+            
+        self.thread = threading.Thread(target=self.monitorLogs, name='monitorLogs')
+        self.thread.setDaemon(1)
+        self.alive.set()
+        self.thread.start()
+        time.sleep(1)
+        
+        smartThreadsLogger.info('Started smart copy error log monitor')
+        
+    def stop(self):
+        """
+        Stop the station monitoring thread.
+        """
+        
+        if self.thread is not None:
+            self.alive.clear()          #clear alive event for thread
+            
+            self.thread.join()          #don't wait too long on the thread to finish
+            self.thread = None
+            self.lastError = None
+            
+            smartThreadsLogger.info('Stopped smart copy error log monitor')
+            
+    def monitorLogs(self):
+        # Checks run even later in the day (22:00 UTC)
+        tLastCheck = (int(time.time())/86400)*86400 + 22*3600
+        
+        while self.alive.isSet():
+            tStart = time.time()
+            
+            if tStart - tLastCheck >= 86400:
+                # Failure complination
+                failures = {}
+                
+                # Error logs
+                filenames = glob.glob('error_*.log')
+                filenames.sort()
+                for filename in filenames:
+                    ## DR name
+                    dr = os.path.basename(filename)
+                    dr = os.path.splitext(dr)[0]
+                    dr = dr.rsplit('_', 1)[1]
+                    
+                    ## Parse to figure out which lines to keep
+                    with ell:
+                        ### Load
+                        with open(filename, 'r') as fh:
+                            contents = fh.read()
+                            
+                        ### Sort
+                        to_keep = []
+                        for line in contents.split('\n'):
+                            if len(line) < 3:
+                                continue
+                            timestamp, fsize, dataname = line.split(None, 2)
+                            timestamp = int(timestamp, 10)
+                            fsize = int(fsize, 10)
+                            
+                            if timestamp >= tStart - 86400 - 3600:
+                                to_keep.append(line)
+                                
+                                if fsize > 0:
+                                    try:
+                                        failures[dr].append(dataname)
+                                    except KeyError:
+                                        failures[dr] = [dataname,]
+                                        
+                        ### Save
+                        with open(filename, 'w') as fh:
+                            fh.write('\n'.join(to_keep))
+                            
+                # Report 
+                report = ''
+                for dr in sorted(list(failures.keys())):
+                    report += '%s:\n' % dr
+                    for dataname in failures[dr]:
+                        report += '  %s\n' % dataname
+                        
+                # Send the report as an email, if there is anything to send
+                if len(report) > 0:
+                    ## A copy for the logs
+                    for line in report.split('\n'):
+                        smartThreadsLogger.debug("%s", line)
+                        
+                    ## The message itself
+                    ### Who gets it
+                    to = ['jdowell@unm.edu',]
+                    cc = None
+                    
+                    ### The report
+                    msg = MIMEText(report)
+                    msg['Subject'] = 'Recent SmartCopy Failures - %s' % (datetime.utcnow().strftime("%Y/%m/%d"),)
+                    msg['From'] = self.FROM
+                    msg['To'] = ','.join(to)
+                    if cc is not None:
+                        cc = list(set(cc))
+                        msg['Cc'] = ','.join(cc)
+                    msg.add_header('reply-to', 'lwa1ops-l@list.unm.edu')
+                    
+                    ### The other who gets it
+                    rcpt = []
+                    rcpt.extend(to)
+                    if cc is not None:
+                        rcpt.extend(cc)
+                        
+                    ## Send it off
+                    try:
+                        server = smtplib.SMTP('smtp.gmail.com', 587)
+                        server.starttls()
+                        server.login(self.FROM, self.PASS)
+                        server.sendmail(self.FROM, rcpt, msg.as_string())
+                        server.close()
+                    except Exception as e:
+                        smartThreadsLogger.error("Could not send error report e-mail: %s", str(e))
+                        
+                # Update the last check time
+                tLastCheck = time.time()
+                
+            # Sleep
+            time.sleep(5)
             
