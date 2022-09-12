@@ -410,7 +410,7 @@ def main(args):
         zeroconf = Zeroconf()
         
         zconfig = {}
-        for key in config:
+        for key in config['mcs']:
             zconfig[key] = str(config['mcs'][key])
         
         zinfo = ServiceInfo("_sccs._udp.local.", "Smart copy server._sccs._udp.local.", 
