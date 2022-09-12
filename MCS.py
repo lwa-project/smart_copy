@@ -96,10 +96,6 @@ class Communicate(object):
         Start the recieve thread - send will run only when needed.
         """
         
-        # Start the packet processing thread
-        op = threading.Thread(target=self.packetProcessor)
-        op.start()
-        
         # Setup the various sockets
         ## Receive
         try:
