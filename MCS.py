@@ -100,11 +100,11 @@ class Communicate(object):
         ## Receive
         try:
             self.socketIn =  socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.socketIn.bind(("0.0.0.0", self.config['MESSAGEINPORT']))
+            self.socketIn.bind(("0.0.0.0", self.config['mcs']['message_in_port']))
             #self.socketIn.setblocking(0)
         except socket.error as err:
             code, e = err
-            self.logger.critical('Cannot bind to listening port %i: %s', self.config['MESSAGEINPORT'], str(e))
+            self.logger.critical('Cannot bind to listening port %i: %s', self.config['mcs']['message_in_port'], str(e))
             self.logger.critical('Exiting on previous error')
             logging.shutdown()
             sys.exit(1)
@@ -112,11 +112,11 @@ class Communicate(object):
         ## Send
         try:
             self.socketOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.destAddress = (self.config['MESSAGEOUTHOST'], self.config['MESSAGEOUTPORT'])
+            self.destAddress = (self.config['mcs']['message_out_host'], self.config['mcs']['message_out_port'])
             #self.socketIn.setblocking(0)
         except socket.error as err:
             code, e = err
-            self.logger.critical('Cannot bind to sending port %i: %s', self.config['MESSAGEOUTPORT'], str(e))
+            self.logger.critical('Cannot bind to sending port %i: %s', self.config['mcs']['message_out_port'], str(e))
             self.logger.critical('Exiting on previous error')
             logging.shutdown()
             sys.exit(1)
@@ -200,7 +200,7 @@ class Communicate(object):
             if address is None:
                 address = self.destAddress
             else:
-                address = (address[0], self.config['MESSAGEOUTPORT'])
+                address = (address[0], self.config['mcs']['message_out_port'])
             bytes_sent = self.socketOut.sendto(payload, address)
             self.logger.debug("mcsSend - Sent to %s '%s'", address, payload)
             return True

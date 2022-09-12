@@ -34,7 +34,7 @@ SITE = socket.gethostname().split('-', 1)[0]
 #
 # Default Configuration File
 #
-DEFAULTS_FILENAME = '/lwa/software/defaults.cfg'
+DEFAULTS_FILENAME = '/lwa/software/defaults.json'
 
 
 class MCSCommunicate(Communicate):
@@ -391,16 +391,19 @@ def main(args):
     logger.info('Current MPM: %i', mpm)
     logger.info('All dates and times are in UTC except where noted')
     
-    # Set the site-dependant MESSAGEOUTHOST IP address
+    # Set the site-dependant `message_out_host` IP address
     if SITE == 'lwa1':
-        MESSAGEOUTHOST = "10.1.1.2"
+        message_out_host = "10.1.1.2"
     elif SITE == 'lwasv':
-        MESSAGEOUTHOST = "10.1.2.2"
+        message_out_host = "10.1.2.2"
     elif SITE == 'lwana':
-        MESSAGEOUTHOST = "10.1.3.2"
+        message_out_host = "10.1.3.2"
         
     # Setup the configuration and zeroconf
-    config = {'MESSAGEINPORT': 5050, 'MESSAGEOUTPORT': 5051, 'MESSAGEREFPORT': 5052, 'MESSAGEOUTHOST': MESSAGEOUTHOST}
+    config = {'mcs': {'message_in_port': 5050,
+                      'message_out_port': 5051,
+                      'message_ref_port': 5052,
+                      'message_out_host': message_out_host}}
     try:
         from zeroconf import Zeroconf, ServiceInfo
         
@@ -408,10 +411,10 @@ def main(args):
         
         zconfig = {}
         for key in config:
-            zconfig[key] = str(config[key])
+            zconfig[key] = str(config['mcs'][key])
         
         zinfo = ServiceInfo("_sccs._udp.local.", "Smart copy server._sccs._udp.local.", 
-                    socket.inet_aton(config['MESSAGEOUTHOST']), config['MESSAGEINPORT'], 0, 0, 
+                    socket.inet_aton(config['mcs']['message_out_host']), config['mcs']['message_in_port'], 0, 0, 
                     zconfig, "%s.local." % socket.gethostname())
                     
         zeroconf.register_service(zinfo)
@@ -424,7 +427,7 @@ def main(args):
     
     # Setup the communications channels
     ## Reference server
-    refServer = ReferenceServer(config['MESSAGEREFPORT'])
+    refServer = ReferenceServer(config['mcs']['message_ref_port'])
     refServer.start()
     ## MCS server
     mcsComms = MCSCommunicate(lwaSC, config, args)

@@ -100,11 +100,11 @@ def main(args):
     while len(inHost) < 3:
         inHost += "_"
     try:
-        inPort = int(zinfo.properties['MESSAGEOUTPORT'], 10)
-        refPort = int(zinfo.properties['MESSAGEREFPORT'], 10)
+        inPort = int(zinfo.properties['message_out_port'], 10)
+        refPort = int(zinfo.properties['message_ref_port'], 10)
     except KeyError:
-        inPort = int(zinfo.properties[b'MESSAGEOUTPORT'], 10)
-        refPort = int(zinfo.properties[b'MESSAGEREFPORT'], 10)
+        inPort = int(zinfo.properties[b'message_out_port'], 10)
+        refPort = int(zinfo.properties[b'message_ref_port'], 10)
         
     cmds = []
     nDR = 5 if SITE == 'lwa1' else 4
