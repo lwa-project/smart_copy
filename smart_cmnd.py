@@ -353,7 +353,7 @@ def main(args):
     
     # Setup logging
     logger = logging.getLogger(__name__)
-    logFormat = logging.Formatter('%(asctime)s [%(levelname)-8s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    logFormat = logging.Formatter('%(asctime)s.%(msecs)03d [%(levelname)-8s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     logFormat.converter = time.gmtime
     if args.log is None:
         logHandler = logging.StreamHandler(sys.stdout)
