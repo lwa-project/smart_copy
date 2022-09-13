@@ -12,6 +12,7 @@ import sys
 import zmq
 import math
 import time
+import select
 import socket
 import string
 import logging
@@ -22,7 +23,7 @@ from io import StringIO
 from datetime import datetime
 from collections import deque
 
-__version__ = "0.2"
+__version__ = "0.3"
 __all__ = ['MCS_RCV_BYTES', 'getTime', 'Communicate', 'ReferenceServer'] 
 
 
@@ -75,9 +76,8 @@ class Communicate(object):
         # Update the socket configuration
         self.updateConfig()
         
-        # Setup the packet queues using deques
-        self.queueIn  = deque()
-        self.queueOut = deque()
+        # Setup the poller
+        self.poller = None
         
         # Set the logger
         self.logger = logging.getLogger('__main__')
@@ -96,23 +96,15 @@ class Communicate(object):
         Start the recieve thread - send will run only when needed.
         """
         
-        # Clear the packet queue
-        self.queueIn  = deque()
-        self.queueOut = deque()
-        
-        # Start the packet processing thread
-        op = threading.Thread(target=self.packetProcessor)
-        op.start()
-        
         # Setup the various sockets
         ## Receive
         try:
             self.socketIn =  socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.socketIn.bind(("0.0.0.0", self.config['MESSAGEINPORT']))
+            self.socketIn.bind(("0.0.0.0", self.config['mcs']['message_in_port']))
             #self.socketIn.setblocking(0)
         except socket.error as err:
             code, e = err
-            self.logger.critical('Cannot bind to listening port %i: %s', self.config['MESSAGEINPORT'], str(e))
+            self.logger.critical('Cannot bind to listening port %i: %s', self.config['mcs']['message_in_port'], str(e))
             self.logger.critical('Exiting on previous error')
             logging.shutdown()
             sys.exit(1)
@@ -120,25 +112,28 @@ class Communicate(object):
         ## Send
         try:
             self.socketOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.destAddress = (self.config['MESSAGEOUTHOST'], self.config['MESSAGEOUTPORT'])
+            self.destAddress = (self.config['mcs']['message_out_host'], self.config['mcs']['message_out_port'])
             #self.socketIn.setblocking(0)
         except socket.error as err:
             code, e = err
-            self.logger.critical('Cannot bind to sending port %i: %s', self.config['MESSAGEOUTPORT'], str(e))
+            self.logger.critical('Cannot bind to sending port %i: %s', self.config['mcs']['message_out_port'], str(e))
             self.logger.critical('Exiting on previous error')
             logging.shutdown()
             sys.exit(1)
+            
+        # Create the incoming socket poller
+        self.poller = select.poll()
+        self.poller.register(self.socketIn, select.POLLIN | select.POLLPRI)
 
     def stop(self):
         """
-        Stop the antenna statistics thread, waiting until it's finished.
+        Stop the receive thread, waiting until it's finished.
         """
         
-        # Clear the packet queue
-        self.queueIn.append('STOP_THREAD')
-        while (len(self.queueIn) + len(self.queueOut)):
-            time.sleep(0.01)
-            
+        # Stop the poller
+        self.poller.unregister(self.socketIn)
+        self.poller = None
+        
         # Close the various sockets
         self.socketIn.close()
         self.socketOut.close()
@@ -149,76 +144,33 @@ class Communicate(object):
         processing queue.
         """
         
-        dataAddress = self.socketIn.recvfrom(MCS_RCV_BYTES)
-        if dataAddress:
-            self.queueIn.append(dataAddress)
+        ngood = 0
+        nerr = 0
+        for fd,flag in self.poller.poll(1000):
+            # Read - we are only listening to one socket
+            dataAddress = self.socketIn.recvfrom(MCS_RCV_BYTES)
             
-    def packetProcessor(self):
-        """
-        Using two deques (one inbound, one outbound), deal with bursty UDP traffic 
-        by having a seperate thread for proccessing commands.
-        """
-        
-        exitCondition = False
-        
-        while True:
-            while len(self.queueIn) > 0:
-                try:
-                    dataAddress = self.queueIn.popleft()
-                    if dataAddress is 'STOP_THREAD':
-                        exitCondition = True
-                        break
-                        
-                    sender, status, command, reference, packed_data, address = self.processCommand(dataAddress)
-                    self.queueOut.append( (sender, status, command, reference, packed_data, address) )
-                    
-                    if len(self.queueOut) > 0:
-                        sender, status, command, reference, packed_data, address = self.queueOut.popleft()
-                        
-                        success = self.sendResponse(sender, status, command, reference, packed_data, address)
-                        if not success:
-                            self.queueOut.appendleft( (sender, status, command, reference, packed_data, address) )
-                            
-                except Exception as e:
-                    exc_type, exc_value, exc_traceback = sys.exc_info()
-                    self.logger.error("packetProcessor failed with: %s at line %i", str(e), exc_traceback.tb_lineno)
-                        
-                    ## Grab the full traceback and save it to a string via StringIO
-                    fileObject = StringIO()
-                    traceback.print_tb(exc_traceback, file=fileObject)
-                    tbString = fileObject.getvalue()
-                    fileObject.close()
-                    ## Print the traceback to the logger as a series of DEBUG messages
-                    for line in tbString.split('\n'):
-                        self.logger.debug("%s", line)
-                        
-            if exitCondition:
-                break
+            # Process
+            try:
+                sender, status, command, reference, packed_data, address = self.processCommand(dataAddress)
+            except Exception as e:
+                nerr += 1
+                self.logger.error("processCommand failed with: %s", str(e))
+                continue
                 
-            while len(self.queueOut) > 0:
-                try:
-                    sender, status, command, reference, packed_data, address = self.queueOut.popleft()
-                        
-                    success = self.sendResponse(sender, status, command, reference, packed_data, address)
-                    if not success:
-                        self.queueOut.appendleft( (sender, status, command, reference, packed_data, address) )
-                        time.sleep(0.001)
-                        
-                except Exception as e:
-                    exc_type, exc_value, exc_traceback = sys.exc_info()
-                    logger.error("packetProcessor failed with: %s at line %i", str(e), exc_traceback.tb_lineno)
-                        
-                    ## Grab the full traceback and save it to a string via StringIO
-                    fileObject = StringIO()
-                    traceback.print_tb(exc_traceback, file=fileObject)
-                    tbString = fileObject.getvalue()
-                    fileObject.close()
-                    ## Print the traceback to the logger as a series of DEBUG messages
-                    for line in tbString.split('\n'):
-                        logger.debug("%s", line)
-                    
-            time.sleep(0.010)
+            # Respond
+            try:
+                self.sendResponse(sender, status, command, reference, packed_data, address)
+            except Exception as e:
+                nerr += 1
+                self.logger.error("sendResponse failed with: %s", str(e))
+                continue
+                
+            # Increment
+            ngood += 1
             
+        return ngood, nerr
+        
     def sendResponse(self, destination, status, command, reference, data, address=None):
         """
         Send a response to MCS via UDP.
@@ -240,15 +192,15 @@ class Communicate(object):
 
         # Build the payload
         payload = "%3s%3s%3s%9i" % (destination, sender, command, reference)
-        payload = payload + "%4i%6i%9i" % (len(data)+8, mjd, mpm)
-        payload = payload + ' ' + response + ("%7s" % systemStatus) + data
+        payload += "%4i%6i%9i" % (len(data)+8, mjd, mpm)
+        payload += ' ' + response + ("%7s" % systemStatus) + data
         payload = payload.encode()
             
         try:
             if address is None:
                 address = self.destAddress
             else:
-                address = (address[0], self.config['MESSAGEOUTPORT'])
+                address = (address[0], self.config['mcs']['message_out_port'])
             bytes_sent = self.socketOut.sendto(payload, address)
             self.logger.debug("mcsSend - Sent to %s '%s'", address, payload)
             return True
@@ -374,30 +326,29 @@ class ReferenceServer(object):
             poller.register(socket, zmq.POLLIN)
             
             while self.alive.isSet():
-                message = dict(poller.poll(timeout*1000))
-                if message:
-                    if message.get(socket) == zmq.POLLIN:
+                events = dict(poller.poll(timeout*1000))
+                if socket in events and events[socket] == zmq.POLLIN:
+                    try:
+                        message = socket.recv()
+                    except zmq.ZMQError as e:
+                        self.logger.error('_generator: error on recv, restarting: %s', str(e))
+                        break
+                    if message == b'next_ref':
+                        payload = b"%i" % ref
                         try:
-                            message = socket.recv(zmq.NOBLOCK)
+                            socket.send(payload)
                         except zmq.ZMQError as e:
-                            self.logger.error('_generator: error on recv, restarting: %s', str(e))
-                            break
-                        if message == b'next_ref':
-                            payload = b"%i" % ref
-                            try:
-                                socket.send(payload)
-                            except zmq.ZMQError as e:
-                                self.logger.error('_generator: error on send: %s', str(e))
-                                continue
+                            self.logger.error('_generator: error on send: %s', str(e))
+                            continue
+                            
+                        ref += 1
+                        if ref > 999999999:
+                            ref = 1
+                            
+                        if ref % 10 == 0:
+                            with open('.sc_reference_id', 'w') as fh:
+                                fh.write("%i" % ref)
                                 
-                            ref += 1
-                            if ref > 999999999:
-                                ref = 1
-                                
-                            if ref % 10 == 0:
-                                with open('.sc_reference_id', 'w') as fh:
-                                    fh.write("%i" % ref)
-                                    
             poller.unregister(socket)
             socket.close()
             context.term()

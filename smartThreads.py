@@ -21,7 +21,7 @@ from email.mime.text import MIMEText
 
 from smartCommon import *
 
-__version__ = "0.4"
+__version__ = "0.5"
 __all__ = ['MonitorStation', 'ManageDR', 'MonitorErrorLogs']
 
 
@@ -53,7 +53,7 @@ class MonitorStation(object):
         
         # Setup the data recorder busy list
         self.busy = {}
-        nDR = 4 if SITE == 'lwasv' else 5
+        nDR = 5 if SITE == 'lwa1' else 4
         for i in range(1, nDR+1):
             self.busy['DR%i' % i] = True
             
@@ -661,11 +661,15 @@ class MonitorErrorLogs(object):
         
         # Setup e-mail access
         ## SMTP user and password
-        self.FROM = 'lwa.station.1@gmail.com'
-        self.PASS = 'srpnbdrdepzrkvmy'
-        if SITE == 'lwasv':
+        if SITE == 'lwa1':
+            self.FROM = 'lwa.station.1@gmail.com'
+            self.PASS = 'srpnbdrdepzrkvmy'
+        elif SITE == 'lwasv':
             self.FROM = 'lwa.station.sv@gmail.com'
             self.PASS = 'wzdttrilphfosjnb'
+        elif SITE == 'lwana':
+            self.FROM = 'lwa.station.na@gmail.com'
+            self.PASS = 'npmdvmeocinxglco'
         
     def start(self):
         """

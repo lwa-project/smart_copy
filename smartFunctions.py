@@ -9,7 +9,7 @@ from socket import gethostname
 
 from smartThreads import *
 
-__version__ = "0.3"
+__version__ = "0.4"
 __all__ = ['commandExitCodes', 'subsystemErrorCodes', 'SmartCopy']
 
 
@@ -113,7 +113,7 @@ class SmartCopy(object):
         else:
             self.currentState['drThreads'] = {}
             self.globalInhibit = {}
-            drs = (1,2,3,4) if self.site == 'lwasv' else (1,2,3,4,5)
+            drs = (1,2,3,4,5) if self.site == 'lwa1' else (1,2,3,4)
             for i in drs:
                 dr = 'DR%i' % i
                 self.currentState['drThreads'][dr] = ManageDR(dr, SCCallbackInstance=self)
