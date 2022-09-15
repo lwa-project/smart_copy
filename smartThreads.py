@@ -762,6 +762,9 @@ class MonitorErrorLogs(object):
                     for line in report.split('\n'):
                         smartThreadsLogger.debug("%s", line)
                         
+                    ## Add on an "email ID" to get around list.unm.edu silliness
+                    report = "%s\n\nEmail ID: %s" % (report, str(uuid.uuid4()))
+                    
                     ## The message itself
                     ### Who gets it
                     to = ['jdowell@unm.edu',]
