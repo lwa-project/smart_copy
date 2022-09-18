@@ -41,6 +41,35 @@ rcl = threading.Semaphore()
 ell = threading.Semaphore()
 
 
+def _LogThreadException(cls, exception, logger=None):
+    """
+    Function to help with logging exceptions within the monitoring threads.
+    This will add a ERROR line to the logs and print the full traceback as
+    DEBUG.
+    """
+    
+    # Get the logger
+    if logger is None:
+        logger = logging.getLogger('__main__')
+        
+    # Extract the traceback and generate the ERROR message
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+    cls_name = type(cls).__name__
+    fnc_name = traceback.extract_tb(exc_traceback, 1)[0][2]
+    lineno = exc_traceback.tb_lineno
+    logger.error("%s: %s failed with: %s at line %i", cls_name, fnc_name, str(exception), lineno)
+    
+    # Grab the full traceback and save it to a string via StringIO so that we
+    # can print it to DEBUG
+    fileObject = StringIO()
+    traceback.print_tb(exc_traceback, file=fileObject)
+    tbString = fileObject.getvalue()
+    fileObject.close()
+    ## Print the traceback to the logger as a series of DEBUG messages
+    for line in tbString.split('\n'):
+        logger.debug("%s", line)
+
+
 class MonitorStation(object):
     def __init__(self, mselog='/home/op1/MCS/sch/mselog.txt', SCCallbackInstance=None):
         self.mselog = mselog
@@ -191,18 +220,8 @@ class MonitorStation(object):
                                 self.SCCallbackInstance.processDRStateChange(dr, self.busy[dr])
                                 
             except Exception as e:
-                exc_type, exc_value, exc_traceback = sys.exc_info()
-                smartThreadsLogger.error("MonitorStation: pollStation failed with: %s at line %i", str(e), exc_traceback.tb_lineno)
+                _LogThreadException(self, e, logger=smartThreadsLogger)
                 
-                ## Grab the full traceback and save it to a string via StringIO
-                fileObject = StringIO()
-                traceback.print_tb(exc_traceback, file=fileObject)
-                tbString = fileObject.getvalue()
-                fileObject.close()
-                ## Print the traceback to the logger as a series of DEBUG messages
-                for line in tbString.split('\n'):
-                    smartThreadsLogger.debug("%s", line)
-                    
             ## Sleep for a bit to wait on new log entries
             time.sleep(1)
             
@@ -441,18 +460,8 @@ class ManageDR(object):
                         self.active = None
                         
             except Exception as e:
-                exc_type, exc_value, exc_traceback = sys.exc_info()
-                smartThreadsLogger.error("ManageDR: processQueue failed with: %s at line %i", str(e), exc_traceback.tb_lineno)
+                _LogThreadException(self, e, logger=smartThreadsLogger)
                 
-                ## Grab the full traceback and save it to a string via StringIO
-                fileObject = StringIO()
-                traceback.print_tb(exc_traceback, file=fileObject)
-                tbString = fileObject.getvalue()
-                fileObject.close()
-                ## Print the traceback to the logger as a series of DEBUG messages
-                for line in tbString.split('\n'):
-                    smartThreadsLogger.debug("%s", line)
-                    
             time.sleep(5)
             
     def addCopyCommand(self, host, hostpath, dest, destpath):
@@ -762,6 +771,9 @@ class MonitorErrorLogs(object):
                     for line in report.split('\n'):
                         smartThreadsLogger.debug("%s", line)
                         
+                    ## Add on an "email ID" to get around list.unm.edu silliness
+                    report = "%s\n\nEmail ID: %s" % (report, str(uuid.uuid4()))
+                    
                     ## The message itself
                     ### Who gets it
                     to = ['jdowell@unm.edu',]
