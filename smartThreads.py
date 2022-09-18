@@ -55,6 +55,10 @@ def _LogThreadException(cls, exception, logger=None):
     # Extract the traceback and generate the ERROR message
     exc_type, exc_value, exc_traceback = sys.exc_info()
     cls_name = type(cls).__name__
+    try:
+        cls_name = "%s - %s" % (cls.dr, cls_name)
+    except AttributeError:
+        pass
     fnc_name = traceback.extract_tb(exc_traceback, 1)[0][2]
     lineno = exc_traceback.tb_lineno
     logger.error("%s: %s failed with: %s at line %i", cls_name, fnc_name, str(exception), lineno)
