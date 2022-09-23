@@ -1,0 +1,16 @@
+{
+  "mcs": {
+    "message_in_port": 5050,
+    "message_out_port": 5051,
+    "message_ref_port": 5052
+  },
+  
+  /* Maximum number of times to retry a copy for giving up */
+  "max_retry": 7,
+  
+  /* Time in hours to wait between copy retries */
+  "wait_retry": 24,
+  
+  /* Data size in TB to accumulate before deleting the source files */
+  "purge_size": 1.0
+}

@@ -255,8 +255,9 @@ class MonitorStation(object):
 
 
 class ManageDR(object):
-    def __init__(self, dr, SCCallbackInstance=None):
+    def __init__(self, dr, config, SCCallbackInstance=None):
         self.dr = dr
+        self.config = config
         self.SCCallbackInstance = SCCallbackInstance
         
         self.queue = DiskBackedQueue('.%s.queue' % self.dr, restore=True)
@@ -390,7 +391,7 @@ class ManageDR(object):
                                     
                         elif self.active.isFailed():
                             ## No, but let's see we we can save it
-                            if self.active.getTryCount() >= 7:
+                            if self.active.getTryCount() >= self.config['max_retry']:
                                 ### No, it's failed too many times.  Save it to the 'error' log
                                 fsize = self.active.getFileSize()
                                 with ell:
@@ -428,8 +429,8 @@ class ManageDR(object):
                             if self.results[task[4]] != 'canceled':
                                 ### Check if this task has been re-queued because of an error.
                                 ### If so, make sure that we haven't tried it again in at 
-                                ### least a day.
-                                if task[5] > 0 and (time.time() - task[6]) < 86400.0:
+                                ### least 'wait_retry' hours.
+                                if task[5] > 0 and (time.time() - task[6]) < self.config['wait_retry']*3600:
                                     ## Let the queue know that we've done something with it
                                     self.queue.task_done()
                                     
@@ -618,7 +619,7 @@ class ManageDR(object):
             totalSize = 0
             
         # If we have at least 1 TB of files to cleanup, run the cleanup.  Otherwise, wait.
-        if totalSize >= 1024**4:
+        if totalSize >= self.config['purge_size']*1024**4:
             smartThreadsLogger.info("Attempting to purge %.1f TB from %s", totalSize/1024.0**4, self.dr)
             
             ## Run the cleanup
@@ -814,4 +815,3 @@ class MonitorErrorLogs(object):
                 
             # Sleep
             time.sleep(5)
-            
