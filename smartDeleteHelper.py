@@ -181,7 +181,8 @@ def main(args):
     try:
         inHost = socket.gethostname().split('-')[1].upper()
     except IndexError:
-        inHost = socket.gethostname().upper()[:3]
+        inHost = socket.gethostname().upper()
+    inHost = inHost[:3]
     while len(inHost) < 3:
         inHost += "_"
     try:
