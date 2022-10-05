@@ -14,7 +14,7 @@
 SERVICE_NAME='smart-copy'
 EXEC_USER='op1'
 EXEC_PATH='/home/op1/SmartCopy'
-EXEC_OPTS='-d -l runtime.log'
+EXEC_OPTS='-c /home/op1/SmartCopy/defaults.json -d -l runtime.log'
 
 check_self() {
 	output=`service $SERVICE_NAME status`

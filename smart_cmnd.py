@@ -11,6 +11,7 @@ import string
 import struct
 import logging
 import argparse
+import json_minify
 try:
     from logging.handlers import WatchedFileHandler
 except ImportError:
@@ -391,6 +392,10 @@ def main(args):
     logger.info('Current MPM: %i', mpm)
     logger.info('All dates and times are in UTC except where noted')
     
+    # Read in the configuration file
+    with open(args.config, 'r') as ch:
+        config = json.loads(json_minify.json_minify(ch.read()))
+        
     # Set the site-dependant `message_out_host` IP address
     if SITE == 'lwa1':
         message_out_host = "10.1.1.2"
@@ -399,11 +404,8 @@ def main(args):
     elif SITE == 'lwana':
         message_out_host = "10.1.3.2"
         
-    # Setup the configuration and zeroconf
-    config = {'mcs': {'message_in_port': 5050,
-                      'message_out_port': 5051,
-                      'message_ref_port': 5052,
-                      'message_out_host': message_out_host}}
+    # Update the configuration and zeroconf
+    config['mcs']['message_out_host'] = message_out_host
     try:
         from zeroconf import Zeroconf, ServiceInfo
         
@@ -513,6 +515,8 @@ if __name__ == "__main__":
         description='control the data copies around the station',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
         )
+    parser.add_argument('-c', '--config', type=str, default=DEFAULTS_FILENAME,
+                        help='name of the SHL configuration file to use')
     parser.add_argument('-l', '--log', type=str, 
                         help='name of the logfile to write logging information to')
     parser.add_argument('-d', '--debug', action='store_true',
