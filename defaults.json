@@ -5,6 +5,9 @@
     "message_ref_port": 5052
   },
   
+  /* Remote destination bandwidth limit in MB/s, 0 disables limiting */
+  "bw_limit": 0.0,
+  
   /* Maximum number of times to retry a copy for giving up */
   "max_retry": 7,
   

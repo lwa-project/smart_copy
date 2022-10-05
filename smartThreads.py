@@ -442,6 +442,7 @@ class ManageDR(object):
                                 ### If the copy appears to be remote, make sure that we can get 
                                 ### the network lock.  If we can't, add the task back to the end
                                 ### of the queue and skip to the next iteration
+                                bw_limit = 0
                                 if task[0] != task[2]:
                                     if not rcl.acquire(False):
                                         ## Let the queue know that we've done something with it
@@ -451,10 +452,12 @@ class ManageDR(object):
                                         self.queue.put(task)
                                         time.sleep(5)
                                         continue
+                                    else:
+                                        bw_limit = self.config['bw_limit']
                                         
                                 ### If we've made it this far we have a copy that is ready to go.  
                                 ### Start it up.
-                                self.active = InterruptibleCopy(*task)
+                                self.active = InterruptibleCopy(*task, bw_limit=bw_limit)
                                 self.results[self.active.id] = 'active/started for %s:%s -> %s:%s' % (task[0], task[1], task[2], task[3])
                                 
                             else:
