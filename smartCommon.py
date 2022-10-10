@@ -164,7 +164,7 @@ class DiskBackedQueue(Queue.Queue):
 class InterruptibleCopy(object):
     _rsyncRE = re.compile('.*?(?P<transferred>\d) +(?P<progress>\d{1,3}%) +(?P<speed>\d+\.\d+[ kMG]B/s) +(?P<remaining>.*)')
     
-    def __init__(self, host, hostpath, dest, destpath, id=None, tries=0, last_try=0.0):
+    def __init__(self, host, hostpath, dest, destpath, id=None, tries=0, last_try=0.0, bw_limit=0.0):
         # Copy setup
         self.host = host
         self.hostpath = hostpath
@@ -179,6 +179,9 @@ class InterruptibleCopy(object):
         # Retry control
         self.tries = tries
         self.last_try = last_try
+        
+        # Bandwidth limiting in MB/s for remote copies
+        self.bw_limit = bw_limit
         
         # Thread setup
         self.thread = None
@@ -518,7 +521,10 @@ class InterruptibleCopy(object):
             else:
                 # Source and destination are on different machines
                 ## --append-verify should be ok here
-                cmd.append( 'shopt -s huponexit && rsync -avH --append-verify --partial --progress %s %s:%s' % (self.hostpath, self.dest, self.destpath) )
+                rcmd = "rsync -avH --append-verify --partial --progress"
+                if self.bw_limit > 0:
+                    rcmd += (" --bwlimit=%.2fm" % self.bw_limit)
+                cmd.append( 'shopt -s huponexit && %s %s %s:%s' % (rcmd, self.hostpath, self.dest, self.destpath) )
                 
         return cmd
         
