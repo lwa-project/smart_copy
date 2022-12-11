@@ -25,7 +25,8 @@ _usernameRE = re.compile(r'ucfuser:[ \t]*(?P<username>[a-zA-Z1]+)(\/(?P<subdir>[
 def parseMetadata(tarname):
     """
     Given a filename for a metadata tarball, parse the file and return a
-    six-element tuple of:
+    seven-element tuple of:
+     * project code
      * filetag
      * DRSU barcode
      * beam
@@ -42,6 +43,7 @@ def parseMetadata(tarname):
         parser.get_session_spec(tarname)
             
     project = parser.get_sdf(tarname)
+    project_id = project.id
     isSpec = False
     if project.sessions[0].observations[0].mode not in ('TBW', 'TBN'):
         if project.sessions[0].spcSetup[0] != 0 and project.sessions[0].spcSetup[1] != 0:
@@ -63,7 +65,7 @@ def parseMetadata(tarname):
             if mtch.group('subdir') is not None:
                 userpath = os.path.join(userpath, mtch.group('subdir'))
                 
-    return tags, barcodes, beam, date, isSpec, userpath
+    return project_id, tags, barcodes, beam, date, isSpec, userpath
 
 
 def getDRSUPath(beam, barcode):
@@ -208,7 +210,7 @@ def main(args):
     for filename in args.filename:
         ## Parse the metadata
         try:
-            filetags, barcodes, beam, date, isSpec, origPath = parseMetadata(filename)
+            project_id, filetags, barcodes, beam, date, isSpec, origPath = parseMetadata(filename)
         except KeyError:
             print("WARNING: could not parse '%s', skipping" % os.path.basename(filename))
             continue
@@ -223,7 +225,7 @@ def main(args):
                 continue
                 
             ## Make sure we have spectrometer data
-            if not isSpec and not args.force:
+            if not isSpec and project_code not in args.allowed_projects:
                 print("WARNING: '%s' has non-spectrometer data, skipping" % os.path.basename(filename))
                 continue
                 
@@ -321,12 +323,16 @@ if __name__ == "__main__":
                         help='comma separated list of obseration numbers to transfer (one based; -1 = tranfer all obserations)')
     parser.add_argument('-m', '--metadata', action='store_true',
                         help='include the metadata with the copy')
-    parser.add_argument('-f', '--force', action='store_true',
-                        help='force copying of non-spectrometer data')
+    parser.add_argument('-a', '--allowed-projects', type=str,
+                        help='comma separated list of projects to copy non-spectrometer data for')
     args = parser.parse_args()
     if args.observations == '-1':
         args.observations = []
     else:
         args.observations = [int(v,10)-1 for v in args.observations.split(',')]
+    if args.allowed_projects is None:
+        args.allowed_projects = []
+    else:
+        args.allowed_projects = [v for v in args.allowed_projects.split(',')]
     main(args)
     
