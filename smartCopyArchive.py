@@ -225,7 +225,7 @@ def main(args):
                 continue
                 
             ## Make sure we have spectrometer data
-            if not isSpec and project_code not in args.allowed_projects:
+            if not isSpec and project_id not in args.allowed_projects:
                 print("WARNING: '%s' has non-spectrometer data, skipping" % os.path.basename(filename))
                 continue
                 
