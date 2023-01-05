@@ -92,7 +92,10 @@ def main(args):
     if zinfo is None:
         raise RuntimeError("Cannot find the smart copy command server")
         
-    outHost = socket.inet_ntoa(zinfo.address)
+    try:
+        outHost = socket.inet_ntoa(zinfo.addresses[0])
+    except AttributeError:
+        outHost = socket.inet_ntoa(zinfo.address)
     outPort = zinfo.port
     try:
         inHost = socket.gethostname().split('-')[1].upper()
