@@ -417,8 +417,9 @@ def main(args):
             zconfig[key] = str(config['mcs'][key])
         
         zinfo = ServiceInfo("_sccs._udp.local.", "Smart copy server._sccs._udp.local.", 
-                    socket.inet_aton(config['mcs']['message_out_host']), config['mcs']['message_in_port'], 0, 0, 
-                    zconfig, "%s.local." % socket.gethostname())
+                            port=config['mcs']['message_in_port'], weight=0, priority=0, 
+                            properties=zconfig, server="%s.local." % socket.gethostname(),
+                            addresses=[socket.inet_aton(config['mcs']['message_out_host']),])
                     
         zeroconf.register_service(zinfo)
         
