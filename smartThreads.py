@@ -23,7 +23,7 @@ from lwa_auth import STORE as LWA_AUTH_STORE
 
 from smartCommon import *
 
-__version__ = "0.5"
+__version__ = "0.6"
 __all__ = ['MonitorStation', 'ManageDR', 'MonitorErrorLogs']
 
 
@@ -667,7 +667,9 @@ class ManageDR(object):
 
 
 class MonitorErrorLogs(object):
-    def __init__(self):
+    def __init__(self, config):
+        self.config = config
+        
         # Setup threading
         self.thread = None
         self.alive = threading.Event()
@@ -680,10 +682,9 @@ class MonitorErrorLogs(object):
         
         # Setup e-mail access
         ## SMTP user and password
-        store_entry = LWA_AUTH_STORE.get('email')
-        self.FROM = store_entry.username
-        self.PASS = store_entry.password
-        self.ESRV = store_entry.url
+        self.FROM = self.config['email']['username']
+        self.PASS = self.config['email']['password']
+        self.ESRV = self.config['email']['smtp_server']
         
     def start(self):
         """

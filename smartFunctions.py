@@ -9,7 +9,7 @@ from socket import gethostname
 
 from smartThreads import *
 
-__version__ = "0.4"
+__version__ = "0.5"
 __all__ = ['commandExitCodes', 'subsystemErrorCodes', 'SmartCopy']
 
 
@@ -122,7 +122,7 @@ class SmartCopy(object):
         if self.currentState['errorThread'] is not None:
             self.currentState['errorThread'].stop()
         else:
-            self.currentState['errorThread'] = MonitorErrorLogs()
+            self.currentState['errorThread'] = MonitorErrorLogs(self.config)
             
         # Start all threads back up
         for dr in self.currentState['drThreads']:
