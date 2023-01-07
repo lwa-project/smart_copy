@@ -1,4 +1,5 @@
 json_minify
 lsl
+lwa_auth
 zeroconf
 zmq
