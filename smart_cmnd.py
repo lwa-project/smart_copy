@@ -21,10 +21,12 @@ import traceback
 from io import StringIO
 from collections import deque
 
+from lwa_auth.tools import load_json_config
+
 from MCS import *
 from smartFunctions import SmartCopy
 
-__version__ = '0.4'
+__version__ = '0.5'
 __all__ = ['MCSCommunicate',]
 
 #
@@ -394,9 +396,8 @@ def main(args):
     logger.info('All dates and times are in UTC except where noted')
     
     # Read in the configuration file
-    with open(args.config, 'r') as ch:
-        config = json.loads(json_minify.json_minify(ch.read()))
-        
+    config = load_json_config(args.config)
+    
     # Set the site-dependant `message_out_host` IP address
     if SITE == 'lwa1':
         message_out_host = "10.1.1.2"

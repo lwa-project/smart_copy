@@ -15,5 +15,12 @@
   "wait_retry": 24,
   
   /* Data size in TB to accumulate before deleting the source files */
-  "purge_size": 1.0
+  "purge_size": 1.0,
+  
+  /* Email for error notification */
+  "email": {
+    "username": "!LWA_AUTH USERNAME email",
+    "password": "!LWA_AUTH PASSWORD email",
+    "smtp_server": "!LWA_AUTH URL email"
+  }
 }
