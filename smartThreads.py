@@ -683,6 +683,7 @@ class MonitorErrorLogs(object):
         store_entry = LWA_AUTH_STORE.get('email')
         self.FROM = store_entry.username
         self.PASS = store_entry.password
+        self.ESRV = store_entry.url
         
     def start(self):
         """
@@ -801,7 +802,7 @@ class MonitorErrorLogs(object):
                         
                     ## Send it off
                     try:
-                        server = smtplib.SMTP('smtp.gmail.com', 587)
+                        server = smtplib.SMTP(self.ESRV, 587)
                         server.starttls()
                         server.login(self.FROM, self.PASS)
                         server.sendmail(self.FROM, rcpt, msg.as_string())
