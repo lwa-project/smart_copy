@@ -19,6 +19,8 @@ from datetime import datetime
 import smtplib
 from email.mime.text import MIMEText
 
+from lwa_auth import STORE as LWA_AUTH_STORE
+
 from smartCommon import *
 
 __version__ = "0.5"
@@ -678,15 +680,9 @@ class MonitorErrorLogs(object):
         
         # Setup e-mail access
         ## SMTP user and password
-        if SITE == 'lwa1':
-            self.FROM = 'lwa.station.1@gmail.com'
-            self.PASS = 'srpnbdrdepzrkvmy'
-        elif SITE == 'lwasv':
-            self.FROM = 'lwa.station.sv@gmail.com'
-            self.PASS = 'wzdttrilphfosjnb'
-        elif SITE == 'lwana':
-            self.FROM = 'lwa.station.na@gmail.com'
-            self.PASS = 'npmdvmeocinxglco'
+        store_entry = LWA_AUTH_STORE.get('email')
+        self.FROM = store_entry.username
+        self.PASS = store_entry.password
         
     def start(self):
         """
