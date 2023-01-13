@@ -173,10 +173,10 @@ def parsePayload(payload):
 
 def main(args):
     # Connect to the smart copy command server
-    zeroconf = Zeroconf()
     tPoll = time.time()
     zinfo = None
     while time.time() - tPoll <= 10.0:
+        zeroconf = Zeroconf()
         zinfo = zeroconf.get_service_info("_sccs._udp.local.", "Smart copy server._sccs._udp.local.")
         
         if zinfo is not None:
@@ -187,6 +187,7 @@ def main(args):
         if zinfo is not None:
             break
             
+        zeroconf.close()
         time.sleep(1)
     if zinfo is None:
         raise RuntimeError("Cannot find the smart copy command server")
