@@ -173,7 +173,10 @@ if __name__ == "__main__":
                         'ACTIVE_SPEED_DR', 'ACTIVE_REMAINING_DR']
         mtch = _queryRE.match(value)
         if mtch is None:
-            raise argparse.ArgumentError
+            _valid_names = ['SUMMARY', 'INFO', 'LASTLOG', 'SUBSYSTEM',
+                            'SERIALNO', 'VERSION']
+            if value not in _valid_names:
+                raise argparse.ArgumentError
         else:
             if mtch.group('name') not in _valid_names:
                 raise argparse.ArgumentError
