@@ -90,7 +90,8 @@ def main(args):
         time.sleep(1)
         zinfo = zeroconf.get_service_info("_sccs._udp.local.", "Smart copy server._sccs._udp.local.")
         if zinfo is not None:
-            if len(list(zinfo.properties.keys())) == 0:
+            if 'message_out_port' not in zinfo.properties \
+               and b'message_out_port' not in zinfo.properties:
                 zinfo = None
     if zinfo is None:
         raise RuntimeError("Cannot find the smart copy command server")
