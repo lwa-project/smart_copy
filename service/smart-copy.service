@@ -26,7 +26,7 @@ python3 ./smart_cmnd.py \
 				 --log runtime.log'
 
 ExecStopPost=/bin/bash -ec '\
-echo "Waiting 60 s for sockets to clear" &&
+echo "Waiting 60 s for sockets to clear" && \
 sleep 60'
 
 [Install]
