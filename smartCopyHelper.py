@@ -19,6 +19,24 @@ from lsl.common import sdf, mcs, metabundle, metabundleADP
 SITE = socket.gethostname().split('-', 1)[0]
 
 
+def doesUserDirectoryExist(destUser):
+    """
+    Check if a UCF directory exists for the specified user.  Return True if it
+    does, False otherwise.
+    """
+    
+    dir_exists = False
+    try:
+        with open('/dev/null', 'w+b') as devnull:
+            output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'ls /data/network/recent_data/%s' % destUser],
+                                             stderr=devnull)
+        dir_exists = True
+    except subprocess.CalledProcessError:
+        pass
+        
+    return dir_exists
+
+
 def parseMetadata(tarname):
     """
     Given a filename for a metadata tarball, parse the file and return a
@@ -215,10 +233,7 @@ def main(args):
     destUser = args.ucfuser[0]
     
     # Validate the UCF username
-    try:
-        with open('/dev/null', 'w+b') as devnull:
-            output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'ls /data/network/recent_data/%s' % destUser], stderr=devnull)
-    except subprocess.CalledProcessError:
+    if not doesUserDirectoryExist(destUser):
         if destUser[:4] == 'eLWA':
             try:
                 output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'mkdir -p /data/network/recent_data/%s' % destUser])
@@ -226,7 +241,7 @@ def main(args):
             except subprocess.CalledProcessError:
                 raise RuntimeError("Could not auto-create eLWA path: %s" % destUser)
         elif destUser == 'original':
-            ## This is ok since it just tells the script to use the orginal file path
+            ## This is ok for now since it just tells the script to use the orginal file path
             pass
         else:
             raise RuntimeError("Invalid UCF username/path: %s" % destUser)
@@ -277,6 +292,10 @@ def main(args):
                 if origPath is None:
                     print("WARNING: no original path found for '%s', skipping" % filetag)
                     continue
+                    
+                if not doesUserDirectoryExist(origPath):
+                    raise RuntimeError("Invalid UCF username/path: %s" % origPath)
+                    
                 destPath = "%s:/mnt/network/recent_data/%s" % (inHost, origPath)
             else:
                 destPath = "%s:/mnt/network/recent_data/%s" % (inHost, destUser)
