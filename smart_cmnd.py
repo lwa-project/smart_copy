@@ -405,7 +405,8 @@ def main(args):
         message_out_host = "10.1.2.2"
     elif SITE == 'lwana':
         message_out_host = "10.1.3.2"
-        
+    nametag = SITE.replace('lwa', '').lower()
+    
     # Update the configuration and zeroconf
     config['mcs']['message_out_host'] = message_out_host
     try:
@@ -417,7 +418,7 @@ def main(args):
         for key in config['mcs']:
             zconfig[key] = str(config['mcs'][key])
         
-        zinfo = ServiceInfo("_sccs._udp.local.", "Smart copy server._sccs._udp.local.", 
+        zinfo = ServiceInfo("_sccs%s._udp.local." % nametag, "Smart copy server._sccs%s._udp.local." % nametag, 
                             port=config['mcs']['message_in_port'], weight=0, priority=0, 
                             properties=zconfig, server="%s.local." % socket.gethostname(),
                             addresses=[socket.inet_aton(config['mcs']['message_out_host']),])
