@@ -15,7 +15,9 @@ from zeroconf import Zeroconf
 
 from lsl.common import sdf, mcs, metabundle, metabundleADP
 
-
+#
+# Site Name
+#
 SITE = socket.gethostname().split('-', 1)[0]
 
 
@@ -168,10 +170,11 @@ def parsePayload(payload):
 def main(args):
     # Connect to the smart copy command server
     tPoll = time.time()
+    nametag = SITE.replace('lwa', '').lower()
     zinfo = None
     while time.time() - tPoll <= 10.0:
         zeroconf = Zeroconf()
-        zinfo = zeroconf.get_service_info("_sccs._udp.local.", "Smart copy server._sccs._udp.local.")
+        zinfo = zeroconf.get_service_info("_sccs%s._udp.local." % nametag, "Smart copy server._sccs%s._udp.local." % nametag)
         
         if zinfo is not None:
             if 'message_out_port' not in zinfo.properties \

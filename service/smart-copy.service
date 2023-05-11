@@ -1,0 +1,33 @@
+Unit]
+Description=Smart copy command server
+After=network-online.target mcs-sch.service mcs-exec.service
+Wants=network-online.target
+
+[Service]
+# Run as the specified user
+User=op1
+
+# Logging
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=smart-copy
+
+Environment=PYTHONUNBUFFERED=1
+
+WorkingDirectory=/home/op1/SmartCopy/
+
+ExecStartPre=/bin/bash -ec '\
+if [ -e runtime.log ]; then mv runtime.log runtime.log.`date +%%y%%m%%d.%%H%%M%%S`; fi'
+
+ExecStart=/bin/bash -ec '\
+python3 ./smart_cmnd.py \
+         --config defaults.json \
+         --debug \
+				 --log runtime.log'
+
+ExecStopPost=/bin/bash -ec '\
+echo "Waiting 60 s for sockets to clear" && \
+sleep 60'
+
+[Install]
+WantedBy=multi-user.target
