@@ -782,7 +782,7 @@ class MonitorErrorLogs(object):
                     
                     ## The message itself
                     ### Who gets it
-                    to = ['jdowell@unm.edu',]
+                    to = ['lwa1ops-l@list.unm.edu',]
                     cc = None
                     
                     ### The report
