@@ -221,7 +221,7 @@ def main(args):
     
     infs = []
     cmds = []
-    destPath = 'mcsdr@leo10g.unm.edu:%s' % DEFAULT_PATH
+    destPath = 'mcsdr@leo.phys.unm.edu:%s' % DEFAULT_PATH
     
     # Process the input files
     for filename in args.filename:
