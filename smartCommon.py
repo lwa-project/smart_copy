@@ -590,7 +590,7 @@ class InterruptibleCopy(object):
         elif self.process.returncode < 0:
             self.status = 'paused'
         else:
-            smartCommonLogger.debug('copy failed -> %s', self.stderr.rstrip())
+            smartCommonLogger.debug('copy failed -> %s', self.stderr.decode().rstrip())
             self.status = 'error: %s' % self.stderr.decode()
             
         return self.process.returncode
