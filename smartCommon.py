@@ -591,7 +591,7 @@ class InterruptibleCopy(object):
             self.status = 'paused'
         else:
             smartCommonLogger.debug('copy failed -> %s', self.stderr.rstrip())
-            self.status = 'error: %s' % self.stderr
+            self.status = 'error: %s' % self.stderr.decode()
             
         return self.process.returncode
         
@@ -664,6 +664,6 @@ class InterruptibleCopy(object):
             self.status = 'paused'
         else:
             smartCommonLogger.debug('delete failed -> %s', self.stderr.rstrip())
-            self.status = 'error: %s' % self.stderr
+            self.status = 'error: %s' % self.stderr.decode()
             
         return self.process.returncode
