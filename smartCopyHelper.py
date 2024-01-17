@@ -297,8 +297,15 @@ def main(args):
                     continue
                     
                 if not doesUserDirectoryExist(origPath):
-                    raise RuntimeError("Invalid UCF username/path: %s" % origPath)
-                    
+                    if origPath[:4] == 'eLWA':
+                        try:
+                            output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'mkdir -p /data/network/recent_data/%s' % origPath])
+                            print("NOTE: auto-created eLWA path: %s" % origPath)
+                        except subprocess.CalledProcessError:
+                            raise RuntimeError("Could not auto-create eLWA path: %s" % destUser)
+                    else:
+                        raise RuntimeError("Invalid UCF username/path: %s" % origPath)
+                        
                 destPath = "%s:/mnt/network/recent_data/%s" % (inHost, origPath)
             else:
                 destPath = "%s:/mnt/network/recent_data/%s" % (inHost, destUser)
