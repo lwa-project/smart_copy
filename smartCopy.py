@@ -155,6 +155,10 @@ def main(args):
             host = inHost
             hostpath = os.path.abspath(hostpath)
             
+        if host == inHost:
+            if not os.path.exists(hostpath):
+                raise RuntimeError("Source file '%s' does not exist" % hostpath)
+                
         try:
             dest, destpath = re.split(r'(?<!\\)\:', destPath, 1)
         except ValueError:
