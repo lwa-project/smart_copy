@@ -143,7 +143,7 @@ class MonitorStation(object):
         for line in lines:
             ## Parse the line
             try:
-                line = line.decode()
+                line = line.decode('ascii', errors='ignore')
             except UnicodeDecodeError as e:
                 smartThreadsLogger.debug("MonitorStation: failed to decode line '%s': %s", line, str(e))
                 continue
