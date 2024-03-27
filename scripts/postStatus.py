@@ -62,9 +62,9 @@ for dr in validDRs:
 data = [{'site': SITE,
          'summary': summary, 
          'total': total_count,
-         'active': activet_count,
+         'active': active_count,
          'update': datetime.utcnow()},]
-data = json.dumps(data)
+data = json.dumps(data, default=_serialize_datetime)
 f = signed_post(LWA_AUTH_KEYS.get(SITE+'-log', kind='private'), URL,
                 data={'site': 'elwa', 'subsystem': 'ASP', 'data': data})
 f.close()
