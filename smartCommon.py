@@ -17,8 +17,8 @@ from socket import gethostname
 
 from collections import OrderedDict
 
-__version__ = '0.3'
-__all__ = ['SerialNumber', 'LimitedSizeDict', 'DiskBackedQueue', 
+__version__ = '0.4'
+__all__ = ['check_leo_access', 'SerialNumber', 'LimitedSizeDict', 'DiskBackedQueue', 
            'InterruptibleCopy', 'DELETE_MARKER_QUEUE', 'DELETE_MARKER_NOW']
 
 
@@ -32,6 +32,22 @@ DELETE_MARKER_NOW   = 'smartcopy_now_delete_this_file'
 IS_UNRELIABLE_LINK = False
 if gethostname().split('-', 1)[0] in ('lwasv',):
     IS_UNRELIABLE_LINK = True
+
+
+def check_leo_access(dr, timeout=5):
+    status = False
+    
+    cmd = ["ssh", "-t", "-t", "mcsdr@%s" % dr.lower()]
+    cmd.append( "shopt -s huponexit && timeout %i date" % timeout )
+    
+    try:
+        cla_p = subprocess.Popen(cmd)
+        cla_s = cla_p.wait()
+        status = True
+    except Exception as cla_e:
+        smartCommonLogger.error('Error accessing leo from \'%s\': %s', dr, str(cla_e))
+        
+    return status
 
 
 class SerialNumber(object):

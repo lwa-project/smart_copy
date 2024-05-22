@@ -60,6 +60,7 @@ class SmartCopy(object):
         ## Monitoring and background threads (antenna statistics, flags, etc.)
         self.currentState['pollingThread'] = None
         self.currentState['drThreads'] = None
+        self.currentState['leoAccess'] = None
         self.currentState['errorThread'] = None
         
     def getState(self):
@@ -112,11 +113,13 @@ class SmartCopy(object):
                 self.currentState['drThreads'][dr].stop()
         else:
             self.currentState['drThreads'] = {}
+            self.currentState['leoAccess'] = {}
             self.globalInhibit = {}
             drs = (1,2,3,4,5) if self.site == 'lwa1' else (1,2,3,4)
             for i in drs:
                 dr = 'DR%i' % i
                 self.currentState['drThreads'][dr] = ManageDR(dr, self.config, SCCallbackInstance=self)
+                self.currentState['leoAccess'] = False
                 self.globalInhibit[dr] = True
         ## Error log monitor
         if self.currentState['errorThread'] is not None:
@@ -550,6 +553,31 @@ class SmartCopy(object):
                 self.currentState['lastLog'] = 'ACTIVE: unknown DR %s' % dr
                 return False, 0
                 
+    def processDRLeoAccess(self, dr, access_status):
+        if self.currentState['drThreads'] is None:
+            return False
+            
+        else:
+            smartFunctionsLogger.debug("Recieved %s -> leo access status of %s", dr, access_status)
+            self.currentState['leoAccess'][dr] = access_status
+            
+            bad_drs = []
+            for dr in self.currentState['leoAccess'].keys():
+                if not self.currentState['leoAccess'][dr]:
+                    bad_drs.append(dr)
+                    
+            if len(bad_drs) > 0:
+                if self.currentState['status'] == 'NORMAL':
+                    self.currentState['status'] = 'ERROR'
+                    self.currentState['info'] = "%s cannot access leo" % ('',.join(bad_drs),)
+                    
+            else:
+                if self.currentState['status'] == 'ERROR' and self.currentState['info'].find('access leo') != -1:
+                    self.currentState['status'] = 'NORMAL'
+                    self.currentState['info'] = "Leo access error condition(s) cleared"
+                    
+            return True
+        
     def processDRStateChange(self, dr, busyState):
         if self.currentState['drThreads'] is None:
             return False

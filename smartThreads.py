@@ -284,6 +284,13 @@ class ManageDR(object):
             host, hostpath, dest, destpath, id, retries, lasttry = entry
             self.results[id] = 'queued for %s:%s -> %s:%s' % (host, hostpath, dest, destpath)
             
+    def check_leo_access(self):
+        """
+        Make sure we can log into leo.  Returns True if we can, False otherwise.
+        """
+        
+        return check_leo_access(self.dr)
+        
     def start(self):
         """
         Start the station monitoring thread.
@@ -341,6 +348,10 @@ class ManageDR(object):
         Resume the current copy and the queue processing.
         """
         
+        leo_access = self.check_leo_access()
+        if self.SCCallbackInstance is not None:
+            self.SCCallbackInstance.processDRLeoAccess(self.dr, leo_access)
+            
         try:
             self.active.resume()
             self.results[self.active.id] = 'active/resumed for %s:%s -> %s:%s' % (self.active.host, self.active.hostpath, self.active.dest, self.active.destpath)
