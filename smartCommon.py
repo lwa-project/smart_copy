@@ -34,10 +34,15 @@ if gethostname().split('-', 1)[0] in ('lwasv',):
     IS_UNRELIABLE_LINK = True
 
 
-def check_leo_access(dr, timeout=5):
+def check_leo_access(host, timeout=5):
+    """
+    Function to check if the specified host has access to leo.  Returns True if
+    the host can log in and successfully run the 'date' command, False otherwise.
+    """
+    
     status = False
     
-    cmd = ["ssh", "-t", "-t", "mcsdr@%s" % dr.lower()]
+    cmd = ["ssh", "-t", "-t", "mcsdr@%s" % host.lower()]
     cmd.append( "shopt -s huponexit && timeout %i ssh mcsdr@leo.phys.unm.edu date" % timeout )
     
     try:
