@@ -38,12 +38,13 @@ def check_leo_access(dr, timeout=5):
     status = False
     
     cmd = ["ssh", "-t", "-t", "mcsdr@%s" % dr.lower()]
-    cmd.append( "shopt -s huponexit && timeout %i date" % timeout )
+    cmd.append( "shopt -s huponexit && timeout %i ssh mcsdr@leo.phys.unm.edu date" % timeout )
     
     try:
         cla_p = subprocess.Popen(cmd)
         cla_s = cla_p.wait()
-        status = True
+        if cla_s == 0:
+            status = True
     except Exception as cla_e:
         smartCommonLogger.error('Error accessing leo from \'%s\': %s', dr, str(cla_e))
         
