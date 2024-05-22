@@ -51,7 +51,7 @@ def check_leo_access(host, timeout=5):
         if cla_s == 0:
             status = True
     except Exception as cla_e:
-        smartCommonLogger.error('Error accessing leo from \'%s\': %s', dr, str(cla_e))
+        smartCommonLogger.error('Error accessing leo from \'%s\': %s', host, str(cla_e))
         
     return status
 
