@@ -224,17 +224,23 @@ class Communicate(object):
         """
         
         data, address = data
-        data = data.decode()
-        
-        destination = data[:3]
-        sender      = data[3:6]
-        command     = data[6:9]
-        reference   = int(data[9:18])
-        datalen     = int(data[18:22]) 
-        mjd         = int(data[22:28]) 
-        mpm         = int(data[28:37]) 
-        data        = data[38:38+datalen]
-        
+        try:
+            data = data.decode()
+        except UnicodeDecodeError as e:
+            raise RuntimeError("Failed to decode packet '%s': %s" % (data, str(e)))
+            
+        try:
+            destination = data[:3]
+            sender      = data[3:6]
+            command     = data[6:9]
+            reference   = int(data[9:18])
+            datalen     = int(data[18:22])
+            mjd         = int(data[22:28])
+            mpm         = int(data[28:37])
+            data        = data[38:38+datalen]
+        except ValueError as e:
+            raise RuntimeError("Failed to parse packet '%s': %s" % (data, str(e)))
+            
         return destination, sender, command, reference, datalen, mjd, mpm, data, address
         
     def processCommand(self, data):
