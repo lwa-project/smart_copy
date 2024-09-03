@@ -112,8 +112,8 @@ class MCSCommunicate(Communicate):
                     packed_data = self.SubSystemInstance.version
                     
                 ## Observing status
-                elif data[0:9] == 'OBSSTATUS':
-                    junk, value = data.split('_', 1)
+                elif data.startswith('OBSSTATUS_'):
+                    _, value = data.split('_', 1)
                     
                     status, packed_data = self.SubSystemInstance.getDRRecordState(value)
                     if status:
@@ -122,8 +122,8 @@ class MCSCommunicate(Communicate):
                         packed_data = self.SubSystemInstance.currentState['lastLog']
                         
                 ## Queue status
-                elif data[0:5] == 'QUEUE':
-                    junk, prop, value = data.split('_', 2)
+                elif data.startswith('QUEUE_'):
+                    _, prop, value = data.split('_', 2)
                     
                     if prop == 'SIZE':
                         status, packed_data = self.SubSystemInstance.getDRQueueSize(value)
@@ -151,9 +151,8 @@ class MCSCommunicate(Communicate):
                         packed_data = 'Unknown MIB entry: %s' % data
                         
                 ## Active status
-                elif data[0:6] == 'ACTIVE':
-                    junk, prop, value = data.split('_', 2)
-                    
+                elif data.startswith('ACTIVE_'):
+                    _, prop, value = data.split('_', 2)
                     
                     if prop == 'ID':
                         status, packed_data = self.SubSystemInstance.getActiveCopyID(value)

@@ -142,7 +142,11 @@ class MonitorStation(object):
         # Walk through the lines
         for line in lines:
             ## Parse the line
-            line = line.decode()
+            try:
+                line = line.decode('ascii', errors='ignore')
+            except UnicodeDecodeError as e:
+                smartThreadsLogger.debug("MonitorStation: failed to decode line '%s': %s", line, str(e))
+                continue
             fields = line.split(None, 9)
             try:
                 rid = int(fields[5], 10)			# MCS reference ID

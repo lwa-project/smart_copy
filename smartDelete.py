@@ -149,6 +149,10 @@ def main(args):
             host = inHost
             hostpath = os.path.abspath(hostpath)
             
+        if host == inHost:
+            if not os.path.exists(hostpath):
+                raise RuntimeError("Source file '%s' does not exist" % hostpath)
+                
         flag = ''
         if args.now:
             flag = '-tNOW '
