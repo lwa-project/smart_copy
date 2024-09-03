@@ -349,6 +349,7 @@ class ReferenceServer(object):
                             
                         ref += 1
                         if ref > 999999999:
+                            self.logger.info('_generator: rolling ID counter back to 1')
                             ref = 1
                             
                         if ref % 10 == 0:
