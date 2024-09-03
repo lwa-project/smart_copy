@@ -90,6 +90,10 @@ def getDRSUPath(beam, barcode):
             try:
                 if line[6]==("['%s']" % (barcode)):
                     path = line[2]
+                    path = path.replace('Internal/0', 'Internal/*')
+                    path = path.replace('Internal/1', 'Internal/*')
+                    path = path.replace('Internal/2', 'Internal/*')
+                    path = path.replace('Internal/3', 'Internal/*')
             except:
                 pass
                 
