@@ -227,7 +227,7 @@ class Communicate(object):
         try:
             data = data.decode()
         except UnicodeDecodeError as e:
-            raise RuntimeError("Failed to decode packet '%s': %s" % (data, str(e)))
+            raise RuntimeError("Failed to decode packet '%s' from %s: %s" % (data, address, str(e)))
             
         try:
             destination = data[:3]
@@ -239,7 +239,7 @@ class Communicate(object):
             mpm         = int(data[28:37])
             data        = data[38:38+datalen]
         except ValueError as e:
-            raise RuntimeError("Failed to parse packet '%s': %s" % (data, str(e)))
+            raise RuntimeError("Failed to parse packet '%s' from %s: %s" % (data, address, str(e)))
             
         return destination, sender, command, reference, datalen, mjd, mpm, data, address
         
