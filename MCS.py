@@ -100,7 +100,7 @@ class Communicate(object):
         ## Receive
         try:
             self.socketIn =  socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.socketIn.bind((config['mcs']['message_out_host'], self.config['mcs']['message_in_port']))
+            self.socketIn.bind((self.config['mcs']['message_out_host'], self.config['mcs']['message_in_port']))
             #self.socketIn.setblocking(0)
         except socket.error as err:
             code, e = err
