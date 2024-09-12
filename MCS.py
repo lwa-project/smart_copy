@@ -100,7 +100,7 @@ class Communicate(object):
         ## Receive
         try:
             self.socketIn =  socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.socketIn.bind(("0.0.0.0", self.config['mcs']['message_in_port']))
+            self.socketIn.bind((config['mcs']['message_out_host'], self.config['mcs']['message_in_port']))
             #self.socketIn.setblocking(0)
         except socket.error as err:
             code, e = err
@@ -272,7 +272,8 @@ class Communicate(object):
 
 
 class ReferenceServer(object):
-    def __init__(self, port):
+    def __init__(self, address, port):
+        self.address = address
         self.port = int(port)
         
         # Set the logger
@@ -326,7 +327,7 @@ class ReferenceServer(object):
             
             context = zmq.Context()
             socket = context.socket(zmq.REP)
-            socket.bind("tcp://*:%i" % self.port)
+            socket.bind("tcp://%s:%i" % (self.address, self.port))
             
             poller = zmq.Poller()
             poller.register(socket, zmq.POLLIN)
