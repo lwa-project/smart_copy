@@ -385,7 +385,7 @@ class ManageDR(object):
                             #### gets copied to the cluster, deleted, and never makes it to the archive.
                             if self.active.hostpath.find('DROS/Spec') != -1:
                                 if self.active.isRemote():
-                                    if self.active.dest.find('leo10g.unm.edu') != -1:
+                                    if self.active.dest.find('leo.phys.unm.edu') != -1:
                                         fsize = self.active.getFileSize()
                                         with open('completed_%s.log' % self.dr, 'a') as fh:
                                             fh.write('%.0f %s %s\n' % (time.time(), fsize, self.active.hostpath))
@@ -397,8 +397,10 @@ class ManageDR(object):
                                     
                         elif self.active.isFailed():
                             ## No, but let's see we we can save it
-                            if self.active.getTryCount() >= self.config['max_retry']:
-                                ### No, it's failed too many times.  Save it to the 'error' log
+                            if (not self.active.getFileExists()) or \
+                               (self.active.getTryCount() >= self.config['max_retry']):
+                                ### No, it either doesn't exist or it's failed too many times.
+                                ### Save it to the 'error' log
                                 fsize = self.active.getFileSize()
                                 with ell:
                                     with open('error_%s.log' % self.dr, 'a') as fh:
