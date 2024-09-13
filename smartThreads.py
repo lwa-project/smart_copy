@@ -397,8 +397,10 @@ class ManageDR(object):
                                     
                         elif self.active.isFailed():
                             ## No, but let's see we we can save it
-                            if self.active.getTryCount() >= self.config['max_retry']:
-                                ### No, it's failed too many times.  Save it to the 'error' log
+                            if (not self.active.getFileExists()) or \
+                               (self.active.getTryCount() >= self.config['max_retry']):
+                                ### No, it either doesn't exist or it's failed too many times.
+                                ### Save it to the 'error' log
                                 fsize = self.active.getFileSize()
                                 with ell:
                                     with open('error_%s.log' % self.dr, 'a') as fh:
