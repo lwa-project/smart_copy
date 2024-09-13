@@ -29,9 +29,8 @@ def doesUserDirectoryExist(destUser):
     
     dir_exists = False
     try:
-        with open('/dev/null', 'w+b') as devnull:
-            output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'ls /data/network/recent_data/%s' % destUser],
-                                             stderr=devnull)
+        output = subprocess.check_output(['ssh', 'mcsdr@lwaucf0', 'ls /data/network/recent_data/%s' % destUser],
+                                         stderr=subprocess.DEVNULL)
         dir_exists = True
     except subprocess.CalledProcessError:
         pass

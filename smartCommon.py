@@ -240,8 +240,7 @@ class InterruptibleCopy(object):
             cmd.append('du -b %s' % self.hostpath)
             
         try:
-            with open('/dev/null', 'w+b') as devnull:
-                output = subprocess.check_output(cmd, stderr=devnull)
+            output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL)
             output = output.decode()
             junk = output.split(None, 1)[0]
             exists = True
@@ -265,8 +264,7 @@ class InterruptibleCopy(object):
                 cmd.append('du -b %s' % self.hostpath)
                 
             try:
-                with open('/dev/null', 'w+b') as devnull:
-                    output = subprocess.check_output(cmd, stderr=devnull)
+                output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL)
                 output = output.decode()
                 self._size = output.split(None, 1)[0]
             except subprocess.CalledProcessError:

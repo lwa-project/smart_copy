@@ -622,8 +622,7 @@ class ManageDR(object):
         
         # Get how many lines are in the logfile
         try:
-            with open('/dev/null', 'w+b') as devnull:
-                totalSize = subprocess.check_output(['awk', "{sum+=$2} END {print sum}", logname], stderr=devnull)
+            totalSize = subprocess.check_output(['awk', "{sum+=$2} END {print sum}", logname], stderr=subprocess.DEVNULL)
             totalSize = totalSize.decode()
             totalSize = int(totalSize, 10)
         except (subprocess.CalledProcessError, ValueError):
@@ -647,8 +646,7 @@ class ManageDR(object):
                 timestamp, fsize, filename = entry.split(None, 2)
                 try:
                     assert(not self.inhibit)
-                    with open('/dev/null', 'w+b') as devnull:
-                        subprocess.check_output(['ssh', '-t', '-t', 'mcsdr@%s' % self.dr, 'shopt -s huponexit && sudo rm -f %s' % filename], stderr=devnull)
+                    subprocess.check_output(['ssh', '-t', '-t', 'mcsdr@%s' % self.dr, 'shopt -s huponexit && sudo rm -f %s' % filename], stderr=subprocess.DEVNULL)
                     smartThreadsLogger.info('Removed %s:%s of size %s', self.dr, filename, fsize)
                 except AssertionError:
                     retry.append( (timestamp, fsize, filename) )
