@@ -100,7 +100,7 @@ class Communicate(object):
         ## Receive
         try:
             self.socketIn =  socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.socketIn.bind(("0.0.0.0", self.config['mcs']['message_in_port']))
+            self.socketIn.bind((self.config['mcs']['message_out_host'], self.config['mcs']['message_in_port']))
             #self.socketIn.setblocking(0)
         except socket.error as err:
             code, e = err
@@ -227,7 +227,7 @@ class Communicate(object):
         try:
             data = data.decode()
         except UnicodeDecodeError as e:
-            raise RuntimeError("Failed to decode packet '%s': %s" % (data, str(e)))
+            raise RuntimeError("Failed to decode packet '%s' from %s: %s" % (data, address, str(e)))
             
         try:
             destination = data[:3]
@@ -239,7 +239,7 @@ class Communicate(object):
             mpm         = int(data[28:37])
             data        = data[38:38+datalen]
         except ValueError as e:
-            raise RuntimeError("Failed to parse packet '%s': %s" % (data, str(e)))
+            raise RuntimeError("Failed to parse packet '%s' from %s: %s" % (data, address, str(e)))
             
         return destination, sender, command, reference, datalen, mjd, mpm, data, address
         
@@ -272,7 +272,8 @@ class Communicate(object):
 
 
 class ReferenceServer(object):
-    def __init__(self, port):
+    def __init__(self, address, port):
+        self.address = address
         self.port = int(port)
         
         # Set the logger
@@ -326,7 +327,7 @@ class ReferenceServer(object):
             
             context = zmq.Context()
             socket = context.socket(zmq.REP)
-            socket.bind("tcp://*:%i" % self.port)
+            socket.bind("tcp://%s:%i" % (self.address, self.port))
             
             poller = zmq.Poller()
             poller.register(socket, zmq.POLLIN)

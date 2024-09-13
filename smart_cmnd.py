@@ -432,7 +432,7 @@ def main(args):
     
     # Setup the communications channels
     ## Reference server
-    refServer = ReferenceServer(config['mcs']['message_ref_port'])
+    refServer = ReferenceServer(config['mcs']['message_out_host'], config['mcs']['message_ref_port'])
     refServer.start()
     ## MCS server
     mcsComms = MCSCommunicate(lwaSC, config, args)
