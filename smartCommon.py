@@ -12,12 +12,13 @@ import threading
 import traceback
 import subprocess
 import logging
+import sqlite3
 from io import StringIO
 from socket import gethostname
 
 from collections import OrderedDict
 
-__version__ = '0.3'
+__version__ = '0.4'
 __all__ = ['SerialNumber', 'LimitedSizeDict', 'DiskBackedQueue', 
            'InterruptibleCopy', 'DELETE_MARKER_QUEUE', 'DELETE_MARKER_NOW']
 
@@ -80,85 +81,263 @@ class LimitedSizeDict(OrderedDict):
                 self.popitem(last=False)
 
 
-class DiskBackedQueue(Queue.Queue):
+class DiskBackedQueue(queue.Queue):
     """
-    Sub-class of Queue.Queue that keeps a copy of the FIFO queue on-disk to 
-    insure continuity between power outages.
+    A thread-safe FIFO queue that persists items to disk using SQLite,
+    supporting multiple queues in a single database.
     """
     
-    _sep = b'<<%>>'
+    SCHEMA = """
+    PRAGMA journal_mode=WAL;
+    PRAGMA synchronous=FULL;
+    PRAGMA busy_timeout=5000;
     
-    def __init__(self, filename, maxsize=0, restore=True):
-        self._filename = filename
-        self._lock = threading.RLock()
-        Queue.Queue.__init__(self, maxsize=maxsize)
-        
-        # See if we need to restore from disk
-        self.restored = []
-        with self._lock:
-            if restore:
-                if os.path.exists(self._filename):
-                    if os.path.getsize(self._filename) > 0:
-                        with open(self._filename, 'rb') as fh:
-                            contents = fh.read()
-                        contents = contents.split(self._sep)
-                        for i,entry in enumerate(contents):
-                            try:
-                                item = pickle.loads(entry)
-                                ## Try to avoid ID collisions across restarts
-                                ## NOTE:  This is particullarly clean since
-                                ##        it doesn't update the ID in the file
-                                host, hostpath, dest, destpath, id, retries, lasttry = item
-                                if not isinstance(id, int):
-                                    id = int(id, 10)
-                                if id < 1024:
-                                    id += 1024
-                                    item = (host, hostpath, dest, destpath, id, retries, lasttry)
-                                Queue.Queue.put(self, item)
-                                self.restored.append(item)
-                            except Exception as e:
-                                warnings.warn("Failed to load entry %i of '%s': %s" \
-                                              % (i, os.path.basename(self._filename), str(e)),
-                                              RuntimeWarning)
-            else:
+    CREATE TABLE IF NOT EXISTS queue_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        queue_name TEXT NOT NULL,
+        item BLOB NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        checksum TEXT NOT NULL
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_queue_status ON queue_items(queue_name, status);
+    CREATE INDEX IF NOT EXISTS idx_created ON queue_items(created_at);
+    """
+
+    # Class-level connection management
+    _db_lock = threading.RLock()
+    _conn: Optional[sqlite3.Connection] = None
+    _cursor: Optional[sqlite3.Cursor] = None
+    _ref_count: int = 0
+
+    @classmethod
+    def _get_connection(cls, db_file):
+        """Get or create the shared database connection."""
+        with cls._db_lock:
+            if cls._conn is None:
                 try:
-                    os.unlink(self._filename)
-                except OSError:
+                    # Initialize the connection
+                    os.makedirs(os.path.dirname(os.path.abspath(db_file)), exist_ok=True)
+                    cls._conn = sqlite3.connect(
+                        db_file,
+                        isolation_level='IMMEDIATE',
+                        check_same_thread=False,
+                        timeout=30.0
+                    )
+                    cls._cursor = cls._conn.cursor()
+                    cls._cursor.executescript(cls.SCHEMA)
+                    cls._conn.commit()
+                except sqlite3.Error as e:
+                    smartCommonLogger.error(f"Failed to initialize queue database: {e}")
+                    raise
+            
+            cls._ref_count += 1
+            return cls._conn, cls._cursor
+
+    @classmethod
+    def _release_connection(cls):
+        """Release the shared database connection."""
+        with cls._db_lock:
+            cls._ref_count -= 1
+            if cls._ref_count == 0 and cls._conn is not None:
+                try:
+                    cls._conn.commit()
+                    cls._conn.close()
+                    cls._conn = None
+                    cls._cursor = None
+                except sqlite3.Error:
                     pass
-                    
-    def _queue_file_io(self, put=None, task_done=False):
+
+    def __init__(self, filename, queue_name, maxsize=0, restore=True):
+        """
+        Initialize a queue instance.
+        
+        Args:
+            filename: Shared SQLite database file path
+            queue_name: Unique name for this queue (e.g., 'DR1', 'DR2')
+            maxsize: Maximum queue size (0 = unlimited)
+            restore: Whether to restore pending items on startup
+        """
+        super().__init__(maxsize)
+        
+        self._db_file = filename
+        self.queue_name = queue_name
+        self._lock = threading.RLock()
+        
+        self.restored_items = []
+        
+        # Get shared database connection
+        self._conn, self._cursor = self._get_connection(filename)
+        
+        # Verify queue integrity
+        self._check_integrity()
+        
+        # Restore pending items if requested
+        if restore:
+            self._restore_pending_items()
+
+    def _check_integrity(self):
+        """Verify queue integrity and recover if needed."""
         with self._lock:
             try:
-                with open(self._filename, 'rb') as fh:
-                    contents = fh.read()
-                contents = contents.split(self._sep)
-            except (OSError, IOError):
-                contents = []
-                
-            if put is not None:
-                put = pickle.dumps(put, protocol=0)
-                contents.insert(0, put)
-                with open(self._filename, 'wb') as fh:
-                    fh.write(self._sep.join(contents))
-            elif task_done:
-                contents = contents[:-1]
-                with open(self._filename, 'wb') as fh:
-                    fh.write(self._sep.join(contents))
+                # Check for and recover from interrupted transactions
+                self._cursor.execute(
+                    """SELECT COUNT(*) FROM queue_items 
+                       WHERE queue_name = ? AND status = 'processing'""",
+                    (self.queue_name,)
+                )
+                processing_count = self._cursor.fetchone()[0]
+                if processing_count > 0:
+                    smartCommonLogger.warning(
+                        f"Found {processing_count} interrupted transactions for {self.queue_name}, recovering..."
+                    )
+                    self._cursor.execute(
+                        """UPDATE queue_items SET status = 'pending' 
+                           WHERE queue_name = ? AND status = 'processing'""",
+                        (self.queue_name,)
+                    )
+                    self._conn.commit()
                     
+            except sqlite3.Error as e:
+                smartCommonLogger.error(f"Integrity check failed for {self.queue_name}: {e}")
+                raise
+
+    def _restore_pending_items(self):
+        """Restore pending items from the database to memory."""
+        with self._lock:
+            try:
+                self._cursor.execute(
+                    """SELECT item FROM queue_items 
+                       WHERE queue_name = ? AND status = 'pending' 
+                       ORDER BY id""",
+                    (self.queue_name,)
+                )
+                rows = self._cursor.fetchall()
+                
+                for row in rows:
+                    try:
+                        item = pickle.loads(row[0])
+                        super().put(item)
+                        self.restored_items.append(item)
+                    except (pickle.UnpicklingError, EOFError) as e:
+                        smartCommonLogger.warning(f"Failed to restore queue item in {self.queue_name}: {e}")
+                
+                smartCommonLogger.info(f"Restored {len(self.restored_items)} items for {self.queue_name}")
+                
+            except sqlite3.Error as e:
+                smartCommonLogger.error(f"Failed to restore items for {self.queue_name}: {e}")
+                raise
+
     def put(self, item, block=True, timeout=None):
+        """Put an item into the queue."""
         with self._lock:
-            Queue.Queue.put(self, item, block=block, timeout=timeout)
-            self._queue_file_io(put=item)
+            super().put(item, block, timeout)
             
-    def put_nowait(self, item):
+            try:
+                # Start transaction
+                self._cursor.execute("BEGIN IMMEDIATE")
+                
+                # Serialize item and compute checksum
+                pickled_item = pickle.dumps(item, protocol=pickle.HIGHEST_PROTOCOL)
+                checksum = str(hash(pickled_item))
+                
+                # Insert with queue name
+                self._cursor.execute(
+                    """INSERT INTO queue_items (queue_name, item, checksum) 
+                       VALUES (?, ?, ?)""",
+                    (self.queue_name, pickled_item, checksum)
+                )
+                
+                # Commit transaction
+                self._conn.commit()
+                
+            except sqlite3.Error as e:
+                self._conn.rollback()
+                smartCommonLogger.error(f"Failed to persist queue item for {self.queue_name}: {e}")
+                raise
+
+    def get(self, block=True, timeout=None):
+        """Get an item from the queue."""
         with self._lock:
-            Queue.Queue.put_nowait(self, item)
-            self._queue_file_io(put=item)
+            item = super().get(block, timeout)
             
+            try:
+                # Start transaction
+                self._cursor.execute("BEGIN IMMEDIATE")
+                
+                pickled_item = pickle.dumps(item, protocol=pickle.HIGHEST_PROTOCOL)
+                checksum = str(hash(pickled_item))
+                
+                self._cursor.execute(
+                    """UPDATE queue_items 
+                       SET status = 'processing' 
+                       WHERE queue_name = ? AND item = ? AND checksum = ? 
+                       AND status = 'pending'""",
+                    (self.queue_name, pickled_item, checksum)
+                )
+                
+                # Commit transaction
+                self._conn.commit()
+                
+            except sqlite3.Error as e:
+                self._conn.rollback()
+                smartCommonLogger.error(f"Failed to update queue item status for {self.queue_name}: {e}")
+                raise
+                
+            return item
+
     def task_done(self):
+        """Mark task as done."""
         with self._lock:
-            Queue.Queue.task_done(self)
-            self._queue_file_io(task_done=True)
+            super().task_done()
+            
+            try:
+                # Start transaction
+                self._cursor.execute("BEGIN IMMEDIATE")
+                
+                # Remove completed items for this queue
+                self._cursor.execute(
+                    """DELETE FROM queue_items 
+                       WHERE queue_name = ? AND status = 'processing'""",
+                    (self.queue_name,)
+                )
+                
+                # Commit transaction
+                self._conn.commit()
+                
+            except sqlite3.Error as e:
+                self._conn.rollback()
+                smartCommonLogger.error(f"Failed to mark queue item as done for {self.queue_name}: {e}")
+                raise
+
+    def get_queue_stats(self):
+        """Get statistics about this queue."""
+        with self._lock:
+            try:
+                stats = {
+                    'pending': 0,
+                    'processing': 0,
+                    'failed': 0
+                }
+                
+                self._cursor.execute(
+                    """SELECT status, COUNT(*) FROM queue_items 
+                       WHERE queue_name = ? GROUP BY status""",
+                    (self.queue_name,)
+                )
+                for status, count in self._cursor.fetchall():
+                    stats[status] = count
+                    
+                return stats
+                
+            except sqlite3.Error as e:
+                smartCommonLogger.error(f"Failed to get queue statistics for {self.queue_name}: {e}")
+                raise
+
+    def __del__(self):
+        """Release the shared connection."""
+        self._release_connection()
 
 
 class InterruptibleCopy(object):

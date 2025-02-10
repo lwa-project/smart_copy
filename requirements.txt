@@ -1,5 +1,6 @@
 json_minify
 lsl
 lwa_auth
+sqlite3
 zeroconf
 zmq

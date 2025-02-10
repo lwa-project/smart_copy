@@ -266,7 +266,7 @@ class ManageDR(object):
         self.config = config
         self.SCCallbackInstance = SCCallbackInstance
         
-        self.queue = DiskBackedQueue('.%s.queue' % self.dr, restore=True)
+        self.queue = DiskBackedQueue('smartcopy.db', queue_name=self.dr, restore=True)
         
         # Setup threading
         self.thread = None
