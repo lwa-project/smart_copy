@@ -33,6 +33,9 @@ if SITE != 'lwa1':
     
 total_count = 0
 active_count = 0
+active_progress = []
+active_remaining = []
+active_speed = []
 for dr in validDRs:
     try:
         output = subprocess.check_output([os.path.join(PATH, 'smartQuery.py'), f"QUEUE_SIZE_DR{dr}"])
@@ -51,6 +54,34 @@ for dr in validDRs:
             try:
                 count = int(count)
                 count = 1
+                
+                output = subprocess.check_output([os.path.join(PATH, 'smartQuery.py'), f"ACTIVE_PROGRESS_DR{dr}"])
+                output = output.decode()
+                output = output.split('\n')[-2]
+                status, _, prog = output.split(None, 2)
+                if status == 'A':
+                    active_progress.append(f"DR{dr} @ {prog}")
+                else:
+                    active_progress.append(f"DR{dr} @ unknown")
+                    
+                output = subprocess.check_output([os.path.join(PATH, 'smartQuery.py'), f"ACTIVE_REMAINING_DR{dr}"])
+                output = output.decode()
+                output = output.split('\n')[-2]
+                status, _, remain = output.split(None, 2)
+                if status == 'A':
+                    active_remaining.append(f"DR{dr} @ {remain}")
+                else:
+                    active_remaining.append(f"DR{dr} @ unknown")
+                    
+                output = subprocess.check_output([os.path.join(PATH, 'smartQuery.py'), f"ACTIVE_SPEED_DR{dr}"])
+                output = output.decode()
+                output = output.split('\n')[-2]
+                status, _, speed = output.split(None, 2)
+                if status == 'A':
+                    active_speed.append(f"DR{dr} @ {speed}")
+                else:
+                    active_speed.append(f"DR{dr} @ unknown")
+                    
             except ValueError:
                 count = 0
         active_count += count
@@ -63,6 +94,9 @@ data = [{'site': SITE,
          'summary': summary, 
          'total': total_count,
          'active': active_count,
+         'progress': active_progress,
+         'remaining': active_remaining,
+         'speed': active_speed,
          'update': datetime.utcnow()},]
 data = json.dumps(data, default=_serialize_datetime)
 f = signed_post(LWA_AUTH_KEYS.get(SITE+'-log', kind='private'), URL,
