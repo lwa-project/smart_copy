@@ -406,27 +406,6 @@ def main(args):
         message_out_host = "10.1.3.2"
     nametag = SITE.replace('lwa', '').lower()
     
-    # Update the configuration and zeroconf
-    config['mcs']['message_out_host'] = message_out_host
-    try:
-        from zeroconf import Zeroconf, ServiceInfo
-        
-        zeroconf = Zeroconf()
-        
-        zconfig = {}
-        for key in config['mcs']:
-            zconfig[key] = str(config['mcs'][key])
-        
-        zinfo = ServiceInfo("_sccs%s._udp.local." % nametag, "Smart copy server._sccs%s._udp.local." % nametag, 
-                            port=config['mcs']['message_in_port'], weight=0, priority=0, 
-                            properties=zconfig, server="%s.local." % socket.gethostname(),
-                            addresses=[socket.inet_aton(config['mcs']['message_out_host']),])
-                    
-        zeroconf.register_service(zinfo)
-        
-    except ImportError:
-        logger.warning('Could not launch zeroconf service info')
-        
     # Setup SmartCopy control
     lwaSC = SmartCopy(config)
     
@@ -500,13 +479,6 @@ def main(args):
     refServer.stop()
     mcsComms.stop()
     
-    # Close down zeroconf
-    try:
-        zeroconf.unregister_service(zinfo)
-        zeroconf.close()
-    except NameError:
-        pass
-        
     # Exit
     logger.info('Finished')
     logging.shutdown()
@@ -526,4 +498,3 @@ if __name__ == "__main__":
                         help='print debug messages as well as info and higher')
     args = parser.parse_args()
     main(args)
-    

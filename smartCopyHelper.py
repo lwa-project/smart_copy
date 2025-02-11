@@ -11,7 +11,7 @@ import argparse
 import subprocess
 from datetime import datetime
 
-from zeroconf import Zeroconf
+import netifaces
 
 from lsl.common import sdf, mcs, metabundle, metabundleADP
 
@@ -19,6 +19,23 @@ from lsl.common import sdf, mcs, metabundle, metabundleADP
 # Site Name
 #
 SITE = socket.gethostname().split('-', 1)[0]
+
+
+def getServerAddress():
+    """
+    Return the IP address of the smart copy server by looking for an interface
+    on a 10.1.x.0 network.
+    """
+    
+    for interface in netifaces.interfaces():
+        addrs = netifaces.ifaddresses(interface)
+        if netifaces.AF_INET in addrs:
+            for addr in addrs[netifaces.AF_INET]:
+                ip = addr['addr']
+                if ip.startswith('10.1.'):
+                    network = '.'.join(ip.split('.')[:3])
+                    return f"{network}.2"
+    raise RuntimeError("Could not find 10.1.x.0 network interface")
 
 
 def doesUserDirectoryExist(destUser):
@@ -189,46 +206,17 @@ def parsePayload(payload):
 
 
 def main(args):
-    # Connect to the smart copy command server
-    tPoll = time.time()
-    nametag = SITE.replace('lwa', '').lower()
-    zinfo = None
-    while time.time() - tPoll <= 10.0:
-        zeroconf = Zeroconf()
-        zinfo = zeroconf.get_service_info("_sccs%s._udp.local." % nametag, "Smart copy server._sccs%s._udp.local." % nametag)
-        
-        if zinfo is not None:
-            if 'message_out_port' not in zinfo.properties \
-               and b'message_out_port' not in zinfo.properties:
-                zinfo = None
-                
-        if zinfo is not None:
-            break
-            
-        zeroconf.close()
-        time.sleep(1)
-    if zinfo is None:
-        raise RuntimeError("Cannot find the smart copy command server")
-        
-    try:
-        outHost = socket.inet_ntoa(zinfo.addresses[0])
-    except AttributeError:
-        outHost = socket.inet_ntoa(zinfo.address)
-    outPort = zinfo.port
+    # Find the smart copy command server and set the in/out ports
+    outHost = getServerAddress()
+    outPort = 5050
     try:
         inHost = socket.gethostname().split('-')[1].upper()
     except IndexError:
         inHost = socket.gethostname().upper()
     inHost = inHost[:3]
-    while len(inHost) < 3:
-        inHost += "_"
-    try:
-        inPort = int(zinfo.properties['message_out_port'], 10)
-        refPort = int(zinfo.properties['message_ref_port'], 10)
-    except KeyError:
-        inPort = int(zinfo.properties[b'message_out_port'], 10)
-        refPort = int(zinfo.properties[b'message_ref_port'], 10)
-        
+    inPort = 5051
+    refPort = 5052
+    
     context = zmq.Context()
     sockRef = context.socket(zmq.REQ)
     sockRef.connect("tcp://%s:%i" % (outHost, refPort))
@@ -396,9 +384,6 @@ def main(args):
         
     sockRef.close()
     context.term()
-    
-    zeroconf.close()
-    time.sleep(0.1)
 
 
 if __name__ == "__main__":
@@ -422,4 +407,3 @@ if __name__ == "__main__":
     else:
         args.observations = [int(v,10)-1 for v in args.observations.split(',')]
     main(args)
-    
