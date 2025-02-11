@@ -3,6 +3,7 @@ import os
 import sys
 import math
 import time
+import uuid
 import socket
 import argparse
 from datetime import datetime
@@ -19,7 +20,7 @@ SITE = socket.gethostname().split('-', 1)[0]
 MCS_RCV_BYTES = 16*1024
 
 
-def getTime():
+def get_time():
     """
     Return a two-element tuple of the current MJD and MPM.
     """
@@ -50,10 +51,17 @@ def getTime():
     return (mjd, mpm)
 
 
+def get_reference():
+    ref = 0
+    while ref == 0 or ref == 999999999:
+        ref = int.from_bytes(uuid.uuid1().bytes[:4], byteorder='big')
+        ref %= 1000000000
+    return ref
+
+
 def buildPayload(source, cmd, data=None):
-    ref = 1
-    
-    mjd, mpm = getTime()
+    mjd, mpm = get_time()
+    ref = get_reference()
     
     payload = ''
     payload += 'SCM'
@@ -118,10 +126,8 @@ def main(args):
         inHost += "_"
     try:
         inPort = int(zinfo.properties['message_out_port'], 10)
-        refPort = int(zinfo.properties['message_ref_port'], 10)
     except KeyError:
         inPort = int(zinfo.properties[b'message_out_port'], 10)
-        refPort = int(zinfo.properties[b'message_ref_port'], 10)
         
     cmds = []
     nDR = 5 if SITE == 'lwa1' else 4

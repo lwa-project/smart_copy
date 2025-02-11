@@ -1,365 +1,238 @@
-
 """
 Base module for dealing with MCS communication.  This module provides the
 MCSComminunicate framework that specified how to processes MCS commands that
-arrive via UDP.  All that is needed for a sub-system is to overload the 
-MCSCommunicate.processCommand() function to deal with the subsystem-specific
-MIBs and commands.
+arrive via UDP.
 """
 
-import os
-import sys
-import zmq
-import math
-import time
-import select
+from dataclasses import dataclass
+from typing import Optional, Tuple, Dict, Any, Union
+import queue
 import socket
-import string
-import logging
 import threading
-import traceback
-
-from io import StringIO
+import time
 from datetime import datetime
-from collections import deque
+import uuid
 
-__version__ = "0.3"
-__all__ = ['MCS_RCV_BYTES', 'getTime', 'Communicate', 'ReferenceServer'] 
-
-
-# Maximum number of bytes to receive from MCS
-MCS_RCV_BYTES = 16*1024
-
-
-def getTime():
-    """
-    Return a two-element tuple of the current MJD and MPM.
-    """
+@dataclass
+class MCSMessage:
+    """Core message class for MCS protocol"""
+    destination: str 
+    sender: str
+    command: str
+    reference: int
+    data: Optional[Union[str, bytes]] = None
+    dst_ip: Optional[str] = None
+    src_ip: Optional[str] = None
     
-    # determine current time
-    dt = datetime.utcnow()
-    year        = dt.year             
-    month       = dt.month      
-    day         = dt.day    
-    hour        = dt.hour
-    minute      = dt.minute
-    second      = dt.second     
-    millisecond = dt.microsecond / 1000
-
-    # compute MJD         
-    # adapted from http://paste.lisp.org/display/73536
-    # can check result using http://www.csgnetwork.com/julianmodifdateconv.html
-    a = (14 - month) // 12
-    y = year + 4800 - a          
-    m = month + (12 * a) - 3                    
-    p = day + (((153 * m) + 2) // 5) + (365 * y)   
-    q = (y // 4) - (y // 100) + (y // 400) - 32045
-    mjd = int(math.floor( (p+q) - 2400000.5))  
-
-    # compute MPM
-    mpm = int(math.floor( (hour*3600 + minute*60 + second)*1000 + millisecond ))
-
-    return (mjd, mpm)
-
-
-
-class Communicate(object):
-    """
-    Class to deal with the communcating with MCS.
-    """
+    @property
+    def data_length(self) -> int:
+        """Get length of data payload"""
+        return len(self.data) if self.data else 0
     
-    def __init__(self, SubSystemInstance, config, opts):
-        self.config = config
-        self.opts = opts
-        self.SubSystemInstance = SubSystemInstance
+    def encode(self) -> bytes:
+        """Encode message for network transmission"""
+        mjd, mpm = get_time()
+        header = (
+            f"{self.destination:<3}"
+            f"{self.sender:<3}"
+            f"{self.command:<3}"
+            f"{self.reference:09d}"
+            f"{self.data_length:04d}"
+            f"{mjd:06d}"
+            f"{mpm:09d} "
+        ).encode()
         
-        # Update the socket configuration
-        self.updateConfig()
-        
-        # Setup the poller
-        self.poller = None
-        
-        # Set the logger
-        self.logger = logging.getLogger('__main__')
-        
-    def updateConfig(self, config=None):
-        """
-        Using the configuration file, update the list of boards.
-        """
-        
-        # Update the current configuration
-        if config is not None:
-            self.config = config
-        
-    def start(self):
-        """
-        Start the recieve thread - send will run only when needed.
-        """
-        
-        # Setup the various sockets
-        ## Receive
-        try:
-            self.socketIn =  socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.socketIn.bind((self.config['mcs']['message_out_host'], self.config['mcs']['message_in_port']))
-            #self.socketIn.setblocking(0)
-        except socket.error as err:
-            code, e = err
-            self.logger.critical('Cannot bind to listening port %i: %s', self.config['mcs']['message_in_port'], str(e))
-            self.logger.critical('Exiting on previous error')
-            logging.shutdown()
-            sys.exit(1)
-        
-        ## Send
-        try:
-            self.socketOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.destAddress = (self.config['mcs']['message_out_host'], self.config['mcs']['message_out_port'])
-            #self.socketIn.setblocking(0)
-        except socket.error as err:
-            code, e = err
-            self.logger.critical('Cannot bind to sending port %i: %s', self.config['mcs']['message_out_port'], str(e))
-            self.logger.critical('Exiting on previous error')
-            logging.shutdown()
-            sys.exit(1)
-            
-        # Create the incoming socket poller
-        self.poller = select.poll()
-        self.poller.register(self.socketIn, select.POLLIN | select.POLLPRI)
-
-    def stop(self):
-        """
-        Stop the receive thread, waiting until it's finished.
-        """
-        
-        # Stop the poller
-        self.poller.unregister(self.socketIn)
-        self.poller = None
-        
-        # Close the various sockets
-        self.socketIn.close()
-        self.socketOut.close()
-        
-    def receiveCommand(self):
-        """
-        Recieve and process MCS command over the network and add it to the packet 
-        processing queue.
-        """
-        
-        ngood = 0
-        nerr = 0
-        for fd,flag in self.poller.poll(1000):
-            # Read - we are only listening to one socket
-            dataAddress = self.socketIn.recvfrom(MCS_RCV_BYTES)
-            
-            # Process
-            try:
-                sender, status, command, reference, packed_data, address = self.processCommand(dataAddress)
-            except Exception as e:
-                nerr += 1
-                self.logger.error("processCommand failed with: %s", str(e))
-                continue
-                
-            # Respond
-            try:
-                self.sendResponse(sender, status, command, reference, packed_data, address)
-            except Exception as e:
-                nerr += 1
-                self.logger.error("sendResponse failed with: %s", str(e))
-                continue
-                
-            # Increment
-            ngood += 1
-            
-        return ngood, nerr
-        
-    def sendResponse(self, destination, status, command, reference, data, address=None):
-        """
-        Send a response to MCS via UDP.
-        """
-    
-        if status:
-            response = 'A'
+        if isinstance(self.data, str):
+            data = self.data.encode()
         else:
-            response = 'R'
+            data = self.data if self.data else b''
             
-        # Set the sender
-        sender = self.SubSystemInstance.subSystem
+        return header + data
+    
+    @classmethod
+    def decode(cls, packet: bytes, src_ip: Optional[str] = None) -> 'MCSMessage':
+        """Decode network packet into message"""
+        header = packet[:38].decode()
+        data = packet[38:38 + int(header[18:22])]
+        
+        return cls(
+            destination=header[:3].strip(),
+            sender=header[3:6].strip(), 
+            command=header[6:9].strip(),
+            reference=int(header[9:18]),
+            data=data,
+            src_ip=src_ip
+        )
+    
+    def create_reply(self, accept: bool, status: str, data: Union[str, bytes] = b'') -> 'MCSMessage':
+        """Create a reply message"""
+        response = 'A' if accept else 'R'
+        reply_data = response.encode() + f"{status:>7}".encode()
+        
+        if isinstance(data, str):
+            reply_data += data.encode()
+        else:
+            reply_data += data
+            
+        return MCSMessage(
+            destination=self.sender,
+            sender=self.destination,
+            command=self.command,
+            reference=self.reference,
+            data=reply_data,
+            dst_ip=self.src_ip
+        )
 
-        # Get current time
-        (mjd, mpm) = getTime()
-        
-        # Get the current system status
-        systemStatus = self.SubSystemInstance.currentState['status']
-
-        # Build the payload
-        payload = "%3s%3s%3s%9i" % (destination, sender, command, reference)
-        payload += "%4i%6i%9i" % (len(data)+8, mjd, mpm)
-        payload += ' ' + response + ("%7s" % systemStatus) + data
-        payload = payload.encode()
-            
-        try:
-            if address is None:
-                address = self.destAddress
-            else:
-                address = (address[0], self.config['mcs']['message_out_port'])
-            bytes_sent = self.socketOut.sendto(payload, address)
-            self.logger.debug("mcsSend - Sent to %s '%s'", address, payload)
-            return True
-            
-        except socket.error:
-            self.logger.warning("mcsSend - Failed to send response to %s, retrying", address)
-            return False
-            
-    def parsePacket(self, data):
-        """
-        Given a MCS UDP command packet, break it into its various parts and return
-        them as an eight-element tuple.  The parts are:
-         1) Destination
-         2) Sender
-         3) Command
-         4) Reference number
-         5) Data section length
-         6) MJD
-         7) MPM
-         8) Data section
-        """
-        
-        data, address = data
-        try:
-            data = data.decode()
-        except UnicodeDecodeError as e:
-            raise RuntimeError("Failed to decode packet '%s' from %s: %s" % (data, address, str(e)))
-            
-        try:
-            destination = data[:3]
-            sender      = data[3:6]
-            command     = data[6:9]
-            reference   = int(data[9:18])
-            datalen     = int(data[18:22])
-            mjd         = int(data[22:28])
-            mpm         = int(data[28:37])
-            data        = data[38:38+datalen]
-        except ValueError as e:
-            raise RuntimeError("Failed to parse packet '%s' from %s: %s" % (data, address, str(e)))
-            
-        return destination, sender, command, reference, datalen, mjd, mpm, data, address
-        
-    def processCommand(self, data):
-        """
-        Interperate the data of a UDP packet as a DP MCS command.
-        
-        Returns a five-elements tuple of:
-         * sender
-         * status of the command (True=accepted, False=rejected)
-         * command anme
-         * reference number
-         * packed response
-        
-        .. note:
-            This function should be replaced by the particulars for
-            the subsystem being controlled.
-        """
-        
-        destination, sender, command, reference, datalen, mjd, mpm, data, address = self.parsePacket(data)
-        
-        sender = 'MCS'
-        status = True
-        command = 'PNG'
-        reference = 1
-        packed_data = ''
-        
-        # Return status, command, reference, and the result
-        return sender, status, command, reference, packed_data, address
-
-
-class ReferenceServer(object):
-    def __init__(self, address, port):
+class MessageReceiver(threading.Thread):
+    """Thread for receiving MCS messages"""
+    
+    def __init__(self, address: Tuple[str, int], subsystem: str = 'ALL'):
+        super().__init__()
+        self.subsystem = subsystem
         self.address = address
-        self.port = int(port)
-        
-        # Set the logger
-        self.logger = logging.getLogger('__main__')
-        
-        # Setup threading
-        self.thread = None
-        self.alive = threading.Event()
-        
-    def start(self):
-        """
-        Start the reference server.
-        """
-        
-        if self.thread is not None:
-            self.stop()
-            
-        self.thread = threading.Thread(target=self._generator, name='generator')
-        self.thread.setDaemon(1)
-        self.alive.set()
-        self.thread.start()
-        time.sleep(1)
-        
-        self.logger.info('Started the reference number server')
-        
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
+        self.socket.bind(address)
+        self.msg_queue = queue.Queue()
+        self.running = threading.Event()
+        self.daemon = True
+    
+    def run(self):
+        self.running.set()
+        while self.running.is_set():
+            try:
+                data, addr = self.socket.recvfrom(16384)
+                if data:
+                    msg = MCSMessage.decode(data, addr[0])
+                    if (self.subsystem == 'ALL' or
+                        msg.destination == 'ALL' or
+                        msg.destination == self.subsystem):
+                        self.msg_queue.put(msg)
+            except socket.error:
+                pass
+                
     def stop(self):
-        """
-        Stop the reference server.
-        """
+        self.running.clear()
+        self.socket.close()
         
-        if self.thread is not None:
-            self.alive.clear()          #clear alive event for thread
-            
-            self.thread.join()          #don't wait too long on the thread to finish
-            self.thread = None
-            
-            self.logger.info('Stopped the reference number server')
-            
-    def _generator(self, timeout=5):
-        ref = 1
-        if os.path.exists('.sc_reference_id'):
-            with open('.sc_reference_id', 'r') as fh:
-                ref = int(fh.read(), 10)
+    def get_message(self, timeout: Optional[float] = None) -> Optional[MCSMessage]:
+        try:
+            return self.msg_queue.get(timeout=timeout)
+        except queue.Empty:
+            return None
+
+class MessageSender(threading.Thread):
+    """Thread for sending MCS messages"""
+    
+    def __init__(self, address: Tuple[str, int], subsystem: str):
+        super().__init__()
+        self.subsystem = subsystem
+        self.address = address
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.msg_queue = queue.Queue()
+        self.running = threading.Event()
+        self.daemon = True
+        
+    def run(self):
+        self.running.set()
+        while self.running.set():
+            try:
+                msg = self.msg_queue.get(timeout=1.0)
+                if msg is None:
+                    continue
+                    
+                msg.sender = self.subsystem
+                encoded = msg.encode()
+                dst_ip = msg.dst_ip if msg.dst_ip else self.address[0]
+                dst_port = self.address[1]
                 
-            ref += 10
-            if ref > 999999999:
-                ref = 1
-                
-        while self.alive.isSet():
-            self.logger.info('_generator: starting with ID %i' % ref)
-            
-            context = zmq.Context()
-            socket = context.socket(zmq.REP)
-            socket.bind("tcp://%s:%i" % (self.address, self.port))
-            
-            poller = zmq.Poller()
-            poller.register(socket, zmq.POLLIN)
-            
-            while self.alive.isSet():
-                events = dict(poller.poll(timeout*1000))
-                if socket in events and events[socket] == zmq.POLLIN:
+                for _ in range(3): # Retry logic
                     try:
-                        message = socket.recv()
-                    except zmq.ZMQError as e:
-                        self.logger.error('_generator: error on recv, restarting: %s', str(e))
+                        self.socket.sendto(encoded, (dst_ip, dst_port))
                         break
-                    if message == b'next_ref':
-                        payload = b"%i" % ref
-                        try:
-                            socket.send(payload)
-                        except zmq.ZMQError as e:
-                            self.logger.error('_generator: error on send: %s', str(e))
-                            continue
-                            
-                        ref += 1
-                        if ref > 999999999:
-                            self.logger.info('_generator: rolling ID counter back to 1')
-                            ref = 1
-                            
-                        if ref % 10 == 0:
-                            with open('.sc_reference_id', 'w') as fh:
-                                fh.write("%i" % ref)
-                                
-            poller.unregister(socket)
-            socket.close()
-            context.term()
+                    except socket.error:
+                        time.sleep(0.001)
+                        
+            except queue.Empty:
+                continue
+                
+    def stop(self):
+        self.running.clear()
+        self.socket.close()
+        
+    def send_message(self, msg: MCSMessage):
+        self.msg_queue.put(msg)
+
+class MCSClient:
+    """High-level client for MCS communication"""
+    
+    def __init__(self, address: Tuple[str, int], subsystem: str = 'MCS'):
+        self.subsystem = subsystem
+        self.sender = MessageSender(address, subsystem)
+        recv_addr = ('0.0.0.0', address[1] + 1)
+        self.receiver = MessageReceiver(recv_addr, subsystem)
+        
+        self.sender.start()
+        self.receiver.start()
+        
+    def send_command(self, 
+                     destination: str,
+                     command: str, 
+                     data: Union[str, bytes] = b'',
+                     timeout: float = 5.0) -> MCSMessage:
+        """Send command and wait for response"""
+        msg = MCSMessage(
+            destination=destination,
+            sender=self.subsystem,
+            command=command,
+            reference=get_reference(),
+            data=data
+        )
+        
+        self.sender.send_message(msg)
+        response = self.receiver.get_message(timeout)
+        
+        if not response:
+            raise TimeoutError("No response received")
             
-            with open('.sc_reference_id', 'w') as fh:
-                fh.write("%i" % ref)
+        if response.data[:1] != b'A':
+            raise RuntimeError(f"Command rejected: {response.data[1:].decode()}")
+            
+        return response
+        
+    def close(self):
+        self.sender.stop()
+        self.receiver.stop()
+        self.sender.join()
+        self.receiver.join()
+        
+    def __enter__(self):
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+# Utility functions
+def get_reference() -> int:
+    ref = 0
+    while ref == 0 or ref == 999999999:
+        ref = int.from_bytes(uuid.uuid1().bytes[:4], byteorder='big')
+        ref %= 1000000000
+    return ref
+
+def get_time() -> Tuple[int, int]:
+    """Get current MJD and MPM"""
+    dt = datetime.utcnow()
+    
+    # MJD calculation
+    a = (14 - dt.month) // 12
+    y = dt.year + 4800 - a
+    m = dt.month + (12 * a) - 3
+    
+    mjd = (dt.day + ((153 * m + 2) // 5) + 365 * y + y // 4 
+           - y // 100 + y // 400 - 32045)
+    
+    # MPM calculation  
+    mpm = ((dt.hour * 3600 + dt.minute * 60 + dt.second) * 1000 
+           + dt.microsecond // 1000)
+           
+    return mjd, mpm

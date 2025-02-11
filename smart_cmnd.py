@@ -1,529 +1,340 @@
 #!/usr/bin/env python3
 
 import os
-import re
-import git
 import sys
-import json
+import git
 import time
 import signal
 import socket
-import string
-import struct
 import logging
 import argparse
-import json_minify
+import threading
+from pathlib import Path
+from datetime import datetime
+from typing import Tuple, Optional
+from functools import wraps
+import collections
 try:
     from logging.handlers import WatchedFileHandler
 except ImportError:
     from logging import FileHandler as WatchedFileHandler
-import traceback
-from io import StringIO
-from collections import deque
 
 from lwa_auth.tools import load_json_config
-
-from MCS import *
+from mcs.messaging import MCSClient, MCSMessage
 from smartFunctions import SmartCopy
 
-__version__ = '0.5'
-__all__ = ['MCSCommunicate',]
+__version__ = '0.6'
 
-#
 # Site Name
-#
 SITE = socket.gethostname().split('-', 1)[0]
 
-
-#
 # Default Configuration File
-#
 DEFAULTS_FILENAME = '/lwa/software/defaults.json'
 
 
-class MCSCommunicate(Communicate):
+def command_handler(command: str):
+    """Decorator to register methods as command handlers"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            return func(self, *args, **kwargs)
+        wrapper._command = command
+        return wrapper
+    return decorator
+
+
+class SmartCommandProcessor:
     """
-    Class to deal with the communcating with MCS.
+    Class to handle MCS command processing for the Smart Copy system.
     """
-    
-    # Setup the command status dictionary, indexed by slot time in seconds (MPM/1000)
-    commandStatus = {}
-    
-    def __init__(self, SubSystemInstance, config, opts):
-            super(MCSCommunicate, self).__init__(SubSystemInstance, config, opts)
-            
-    def processCommand(self, data):
-        """
-        Interperate the data of a UDP packet as a SHL MCS command.
-        """
+    def __init__(self, subsystem_instance: SmartCopy, config: dict):
+        self.subsystem = subsystem_instance
+        self.config = config
+        self.logger = logging.getLogger(__name__)
         
-        destination, sender, command, reference, datalen, mjd, mpm, data, address = self.parsePacket(data)
+        # Setup MCS client
+        host = self.config['mcs']['message_out_host']
+        in_port = self.config['mcs']['message_in_port']
+        out_port = self.config['mcs']['message_out_port']
         
-        self.logger.debug('Got command %s from %s: ref #%i', command, sender, reference)
-    
-        # check destination and sender
-        if destination in (self.SubSystemInstance.subSystem, 'ALL'):
-            # Calculate the fullSlotTime
-            fullSlotTime = int(time.time())
+        self.mcs_client = MCSClient(
+            address=(host, out_port),
+            subsystem=self.subsystem.subSystem
+        )
+        
+        # Track recent reference IDs - use deque as a fixed-size FIFO
+        self.recent_refs = collections.deque(maxlen=1000)
+        self.ref_lock = threading.Lock()
+        
+        # Auto-register command handlers
+        self._handlers: Dict[str, Callable] = {}
+        for attr_name in dir(self):
+            attr = getattr(self, attr_name)
+            if hasattr(attr, '_command'):
+                self._handlers[attr._command] = attr
+                
+        # Initialize command tracking
+        self.command_status = {}
+        
+    def process_message(self, msg: MCSMessage) -> MCSMessage:
+        """Process an incoming MCS message and return the response"""
+        
+        # Check destination
+        if msg.destination not in (self.subsystem.subSystem, 'ALL'):
+            return None
             
-            # PNG
-            if command == 'PNG':
-                status = True
-                packed_data = ''
+        full_slot_time = int(time.time())
+        self.logger.debug('Got command %s from %s: ref #%i', 
+                          msg.command, msg.sender, msg.reference)
+        
+        # Check for duplicate reference ID
+        with self.ref_lock:
+            if msg.reference in self.recent_refs:
+                self.logger.warning('Rejecting duplicate reference ID: %i', msg.reference)
+                return msg.create_reply(False, self.subsystem.currentState['status'], 
+                                      'Duplicate reference ID')
+            self.recent_refs.append(msg.reference)
+        
+        # Look up handler
+        handler = self._handlers.get(msg.command)
+        if not handler:
+            status = False
+            response = f'Unknown command: {msg.command}'
+        else:
+            try:
+                status, response = handler(msg)
+            except Exception as e:
+                self.logger.error("Command processing error: %s", str(e))
+                status = False 
+                response = f"Error: {str(e)}"
+                
+        # Prune old command status entries
+        self._prune_command_status()
+        
+        # Create response
+        return msg.create_reply(status, self.subsystem.currentState['status'], response)
+        
+    @command_handler('PNG')
+    def ping(self, msg: MCSMessage) -> Tuple[bool, str]:
+        return True, ''
+        
+    @command_handler('RPT')
+    def report(self, msg: MCSMessage) -> Tuple[bool, str]:
+        report_type = msg.data.decode() if isinstance(msg.data, bytes) else msg.data
+        
+        if not report_type:
+            return False, "No report type specified"
             
-            # Report various MIB entries
-            elif command == 'RPT':
-                status = True
-                packed_data = ''
+        try:
+            if report_type == 'SUMMARY':
+                return True, self.subsystem.currentState['status'][:7]
                 
-                ## General Info.
-                if data == 'SUMMARY':
-                    summary = self.SubSystemInstance.currentState['status'][:7]
-                    self.logger.debug('summary = %s', summary)
-                    packed_data = summary
-                elif data == 'INFO':
-                    ### Trim down as needed
-                    if len(self.SubSystemInstance.currentState['info']) > 256:
-                        infoMessage = "%s..." % self.SubSystemInstance.currentState['info'][:253]
-                    else:
-                        infoMessage = self.SubSystemInstance.currentState['info'][:256]
-                        
-                    self.logger.debug('info = %s', infoMessage)
-                    packed_data = infoMessage
-                elif data == 'LASTLOG':
-                    ### Trim down as needed
-                    if len(self.SubSystemInstance.currentState['lastLog']) > 256:
-                        lastLogEntry = "%s..." % self.SubSystemInstance.currentState['lastLog'][:253]
-                    else:
-                        lastLogEntry =  self.SubSystemInstance.currentState['lastLog'][:256]
-                    if len(lastLogEntry) == 0:
-                        lastLogEntry = 'no log entry'
-                    
-                    self.logger.debug('lastlog = %s', lastLogEntry)
-                    packed_data = lastLogEntry
-                elif data == 'SUBSYSTEM':
-                    self.logger.debug('subsystem = %s', self.SubSystemInstance.subSystem)
-                    packed_data = self.SubSystemInstance.subSystem
-                elif data == 'SERIALNO':
-                    self.logger.debug('serialno = %s', self.SubSystemInstance.serialNumber)
-                    packed_data = self.SubSystemInstance.serialNumber
-                elif data == 'VERSION':
-                    self.logger.debug('version = %s', self.SubSystemInstance.version)
-                    packed_data = self.SubSystemInstance.version
-                    
-                ## Observing status
-                elif data.startswith('OBSSTATUS_'):
-                    _, value = data.split('_', 1)
-                    
-                    status, packed_data = self.SubSystemInstance.getDRRecordState(value)
-                    if status:
-                        packed_data = str(packed_data)
-                    else:
-                        packed_data = self.SubSystemInstance.currentState['lastLog']
-                        
-                ## Queue status
-                elif data.startswith('QUEUE_'):
-                    _, prop, value = data.split('_', 2)
-                    
-                    if prop == 'SIZE':
-                        status, packed_data = self.SubSystemInstance.getDRQueueSize(value)
-                        if status:
-                            packed_data = str(packed_data)
-                        else:
-                            packed_data = self.SubSystemInstance.currentState['lastLog']
-                            
-                    elif prop == 'STATUS':
-                        status, packed_data = self.SubSystemInstance.getDRQueueState(value)
-                        if status:
-                            packed_data = str(packed_data)
-                        else:
-                            packed_data = self.SubSystemInstance.currentState['lastLog']
-                            
-                    elif prop == 'ENTRY':
-                        status, packed_data = self.SubSystemInstance.getCopyCommand(value)
-                        if status:
-                            packed_data = str(packed_data)
-                        else:
-                            packed_data = self.SubSystemInstance.currentState['lastLog']
-                            
-                    else:
-                        status = False
-                        packed_data = 'Unknown MIB entry: %s' % data
-                        
-                ## Active status
-                elif data.startswith('ACTIVE_'):
-                    _, prop, value = data.split('_', 2)
-                    
-                    if prop == 'ID':
-                        status, packed_data = self.SubSystemInstance.getActiveCopyID(value)
-                        if status:
-                            packed_data = str(packed_data)
-                        else:
-                            packed_data = self.SubSystemInstance.currentState['lastLog']
-                            
-                    elif prop == 'STATUS':
-                        status, packed_data = self.SubSystemInstance.getActiveCopyStatus(value)
-                        if status:
-                            packed_data = str(packed_data)
-                        else:
-                            packed_data = self.SubSystemInstance.currentState['lastLog']
-                            
-                    elif prop == 'BYTES':
-                        status, packed_data = self.SubSystemInstance.getActiveCopyBytes(value)
-                        if status:
-                            packed_data = str(packed_data)
-                        else:
-                            packed_data = self.SubSystemInstance.currentState['lastLog']
-                            
-                    elif prop == 'PROGRESS':
-                        status, packed_data = self.SubSystemInstance.getActiveCopyProgress(value)
-                        if status:
-                            packed_data = str(packed_data)
-                        else:
-                            packed_data = self.SubSystemInstance.currentState['lastLog']
-                            
-                    elif prop == 'SPEED':
-                        status, packed_data = self.SubSystemInstance.getActiveCopySpeed(value)
-                        if status:
-                            packed_data = str(packed_data)
-                        else:
-                            packed_data = self.SubSystemInstance.currentState['lastLog']
-                            
-                    elif prop == 'REMAINING':
-                        status, packed_data = self.SubSystemInstance.getActiveCopyRemaining(value)
-                        if status:
-                            packed_data = str(packed_data)
-                        else:
-                            packed_data = self.SubSystemInstance.currentState['lastLog']
-                            
-                    else:
-                        status = False
-                        packed_data = 'Unknown MIB entry: %s' % data
-                        
-                ## Unknown MIB entries
-                else:
-                    status = False
-                    self.logger.debug('%s = error, unknown entry', data)
-                    packed_data = 'Unknown MIB entry: %s' % data
-                    
-            #
-            # Control Commands
-            #
-            
-            # INI
-            elif command == 'INI':
-                # Go
-                status, exitCode = self.SubSystemInstance.ini(refID=reference)
-                if status:
-                    packed_data = ''
-                else:
-                    packed_data = "0x%02X! %s" % (exitCode, self.SubSystemInstance.currentState['lastLog'])
-                    
-                # Update the list of command executed
-                try:
-                    self.commandStatus[fullSlotTime].append( ('INI', reference, exitCode) )
-                except KeyError:
-                    self.commandStatus[fullSlotTime] = [('INI', reference, exitCode), ]
-                    
-            # SHT
-            elif command == 'SHT':
-                status, exitCode = self.SubSystemInstance.sht(mode=data)
-                if status:
-                    packed_data = ''
-                else:
-                    packed_data = "0x%02X! %s" % (exitCode, self.SubSystemInstance.currentState['lastLog'])
-                    
-                # Update the list of command executed
-                try:
-                    self.commandStatus[fullSlotTime].append( ('SHT', reference, exitCode) )
-                except KeyError:
-                    self.commandStatus[fullSlotTime] = [('SHT', reference, exitCode), ]
-                    
-            # SCP
-            elif command == 'SCP':
-                src, dest = data.split('->', 1)
-                host, hostpath = re.split(r'(?<!\\)\:', src, 1)
-                dest, destpath = re.split(r'(?<!\\)\:', dest, 1)
+            elif report_type == 'INFO':
+                info = self.subsystem.currentState['info']
+                if len(info) > 256:
+                    info = f"{info[:253]}..."
+                return True, info
                 
-                status, exitCode = self.SubSystemInstance.addCopyCommand(host, host, hostpath, dest, destpath)
-                if status:
-                    packed_data = exitCode
-                    exitCode = 0x00
-                else:
-                    packed_data = "0x%02X! %s" % (exitCode, self.SubSystemInstance.currentState['lastLog'])
-                    
-                # Update the list of command executed
-                try:
-                    self.commandStatus[fullSlotTime].append( ('SCP', reference, exitCode) )
-                except KeyError:
-                    self.commandStatus[fullSlotTime] = [('SCP', reference, exitCode), ]
-                    
-            # PAU
-            elif command == 'PAU':
-                dr = data
+            elif report_type == 'LASTLOG':
+                log = self.subsystem.currentState['lastLog']
+                if len(log) > 256:
+                    log = f"{log[:253]}..."
+                if not log:
+                    log = 'no log entry'
+                return True, log
                 
-                status, exitCode = self.SubSystemInstance.pauseCopyQueue(dr)
-                if status:
-                    packed_data = str(exitCode)
-                    exitCode = 0x00
-                else:
-                    packed_data = "0x%02X! %s" % (exitCode, self.SubSystemInstance.currentState['lastLog'])
-                    
-                # Update the list of command executed
-                try:
-                    self.commandStatus[fullSlotTime].append( ('PAU', reference, exitCode) )
-                except KeyError:
-                    self.commandStatus[fullSlotTime] = [('PAU', reference, exitCode), ]
-                    
-            # RES
-            elif command == 'RES':
-                dr = data
+            elif report_type.startswith('OBSSTATUS_'):
+                dr = report_type.split('_', 1)[1]
+                return self.subsystem.getDRRecordState(dr)
                 
-                status, exitCode = self.SubSystemInstance.resumeCopyQueue(dr)
-                if status:
-                    packed_data = str(exitCode)
-                    exitCode = 0x00
-                else:
-                    packed_data = "0x%02X! %s" % (exitCode, self.SubSystemInstance.currentState['lastLog'])
-                    
-                # Update the list of command executed
-                try:
-                    self.commandStatus[fullSlotTime].append( ('RES', reference, exitCode) )
-                except KeyError:
-                    self.commandStatus[fullSlotTime] = [('RES', reference, exitCode), ]
-                    
-            # SCN
-            elif command == 'SCN':
-                id = data
+            elif report_type.startswith('QUEUE_'):
+                return self._handle_queue_report(report_type)
                 
-                status, exitCode = self.SubSystemInstance.cancelCopyCommand(id)
-                if status:
-                    packed_data = exitCode
-                    exitCode = 0x00
-                else:
-                    packed_data = "0x%02X! %s" % (exitCode, self.SubSystemInstance.currentState['lastLog'])
-                    
-                # Update the list of command executed
-                try:
-                    self.commandStatus[fullSlotTime].append( ('SCN', reference, exitCode) )
-                except KeyError:
-                    self.commandStatus[fullSlotTime] = [('SCN', reference, exitCode), ]
-                    
-            # DEL
-            elif command == 'SRM':
-                now = False
-                if data[:5] == '-tNOW':
-                    now = True
-                    data = data.split('-tNOW', 1)[1]
-                    data = data.strip()
-                host, hostpath = re.split(r'(?<!\\)\:', data, 1)
+            elif report_type.startswith('ACTIVE_'):
+                return self._handle_active_report(report_type)
                 
-                status, exitCode = self.SubSystemInstance.addDeleteCommand(host, host, hostpath, now=now)
-                if status:
-                    packed_data = exitCode
-                    exitCode = 0x00
-                else:
-                    packed_data = "0x%02X! %s" % (exitCode, self.SubSystemInstance.currentState['lastLog'])
-                    
-                # Update the list of command executed
-                try:
-                    self.commandStatus[fullSlotTime].append( ('SRM', reference, exitCode) )
-                except KeyError:
-                    self.commandStatus[fullSlotTime] = [('SRM', reference, exitCode), ]
-                    
-            # 
-            # Unknown command catch
-            #
-            
             else:
-                status = False
-                self.logger.debug('%s = error, unknown command', command)
-                packed_data = 'Unknown command: %s' % command
+                return False, f'Unknown MIB entry: {report_type}'
                 
-            # Prune command status list of old values
-            for previousSlotTime in list(self.commandStatus.keys())[:-4]:
-                del self.commandStatus[previousSlotTime]
-                
-            # Return status, command, reference, and the result
-            return sender, status, command, reference, packed_data, address
+        except Exception as e:
+            return False, str(e)
+            
+    def _handle_queue_report(self, report_type: str) -> Tuple[bool, str]:
+        """Handle queue-related reports"""
+        _, prop, value = report_type.split('_', 2)
+        
+        if prop == 'SIZE':
+            return self.subsystem.getDRQueueSize(value)
+        elif prop == 'STATUS':
+            return self.subsystem.getDRQueueState(value)
+        elif prop == 'ENTRY':
+            return self.subsystem.getCopyCommand(value)
+        else:
+            return False, f'Unknown queue property: {prop}'
+
+    def _handle_active_report(self, report_type: str) -> Tuple[bool, str]:
+        """Handle active copy reports"""
+        _, prop, value = report_type.split('_', 2)
+        
+        if prop == 'ID':
+            return self.subsystem.getActiveCopyID(value)
+        elif prop == 'STATUS':
+            return self.subsystem.getActiveCopyStatus(value)
+        elif prop == 'BYTES':
+            return self.subsystem.getActiveCopyBytes(value)
+        elif prop == 'PROGRESS':
+            return self.subsystem.getActiveCopyProgress(value)
+        elif prop == 'SPEED':
+            return self.subsystem.getActiveCopySpeed(value)
+        elif prop == 'REMAINING':
+            return self.subsystem.getActiveCopyRemaining(value)
+        else:
+            return False, f'Unknown active property: {prop}'
+            
+    @command_handler('INI')
+    def ini(self, msg: MCSMessage) -> Tuple[bool, str]:
+        status, exit_code = self.subsystem.ini(refID=msg.reference)
+        if status:
+            response = ''
+        else:
+            response = f"0x{exit_code:02X}! {self.subsystem.currentState['lastLog']}"
+        self._track_command(full_slot_time, 'INI', msg.reference, exit_code)
+        return status, exit_code
+        
+    @command_handler('SHT')
+    def sht(self, msg: MCSMessage) -> Tuple[bool, str]:
+        status, exit_code = self.subsystem.sht(mode=msg.data)
+        if status:
+            response = ''
+        else:
+            response = f"0x{exit_code:02X}! {self.subsystem.currentState['lastLog']}"
+            self._track_command(full_slot_time, 'SHT', msg.reference, exit_code)
+        return status, exit_code
+        
+    @command_handler('SCP')
+    def copy(self, msg: MCSMessage) -> Tuple[bool, str]:
+        status, response = self._handle_copy(msg.data, msg.reference)
+        return status, response
+        
+    @command_handler('PAU')
+    @command_handler('RES')
+    def pause_resume(self, msg: MCSMessage) -> Tuple[bool, str]:
+        status, response = self._handle_queue_control(msg.command, msg.data, msg.reference)
+        return status, response
+    
+    @command_handler('SCN')
+    def cancel(self, msg: MCSMessage) -> Tuple[bool, str]:
+        status, response = self._handle_cancel(msg.data, msg.reference)
+        return status, response
+        
+    @command_handler('SRM')
+    def remove(self, msg: MCSMessage) -> Tuple[bool, str]:
+        status, response = self._handle_delete(msg.data, msg.reference)
+        return status, response
+        
+    def _track_command(self, slot_time: int, cmd: str, ref: int, exit_code: int):
+        """Track command execution for status reporting"""
+        try:
+            self.command_status[slot_time].append((cmd, ref, exit_code))
+        except KeyError:
+            self.command_status[slot_time] = [(cmd, ref, exit_code)]
+
+    def _prune_command_status(self):
+        """Remove old command status entries"""
+        for slot_time in list(self.command_status.keys())[:-4]:
+            del self.command_status[slot_time]
+
+    def start(self):
+        """Start the command processor"""
+        self.mcs_client.start()
+        
+    def stop(self):
+        """Stop the command processor"""
+        self.mcs_client.close()
 
 
 def main(args):
-    """
-    Main function of smart_cmnd.py.  This sets up the various configuation options 
-    and start the UDP command handler.
-    """
+    """Main function to run the smart copy command processor"""
     
     # Setup logging
     logger = logging.getLogger(__name__)
-    logFormat = logging.Formatter('%(asctime)s.%(msecs)03d [%(levelname)-8s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-    logFormat.converter = time.gmtime
-    if args.log is None:
-        logHandler = logging.StreamHandler(sys.stdout)
-    else:
-        logHandler = WatchedFileHandler(args.log)
-    logHandler.setFormatter(logFormat)
-    logger.addHandler(logHandler)
-    if args.debug:
-        logger.setLevel(logging.DEBUG)
-    else:
-        logger.setLevel(logging.INFO)
-        
-    # Get current MJD and MPM
-    mjd, mpm = getTime()
+    log_format = logging.Formatter(
+        '%(asctime)s.%(msecs)03d [%(levelname)-8s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    log_format.converter = time.gmtime
     
-    # Git information
+    if args.log is None:
+        log_handler = logging.StreamHandler(sys.stdout)
+    else:
+        log_handler = WatchedFileHandler(args.log)
+    log_handler.setFormatter(log_format)
+    logger.addHandler(log_handler)
+    logger.setLevel(logging.DEBUG if args.debug else logging.INFO)
+
+    # Get git info
     try:
-        repo = git.Repo(os.path.dirname(os.path.abspath(__file__)))
+        repo = git.Repo(Path(__file__).parent)
         branch = repo.active_branch.name
-        hexsha = repo.active_branch.commit.hexsha
-        shortsha = hexsha[-7:]
+        commit = repo.active_branch.commit.hexsha
         dirty = ' (dirty)' if repo.is_dirty() else ''
     except git.exc.GitError:
-        branch = 'unknown'
-        hexsha = 'unknown'
-        shortsha = 'unknown'
+        branch = commit = 'unknown'
         dirty = ''
-        
-    # Report on who we are
-    logger.info('Starting smart_cmnd.py with PID %i', os.getpid())
-    logger.info('Version: %s', __version__)
-    logger.info('Revision: %s.%s%s', branch, shortsha, dirty)
-    logger.info('Site: %s', SITE)
-    logger.info('Current MJD: %i', mjd)
-    logger.info('Current MPM: %i', mpm)
-    logger.info('All dates and times are in UTC except where noted')
-    
-    # Read in the configuration file
+
+    # Load config
     config = load_json_config(args.config)
     
-    # Set the site-dependant `message_out_host` IP address
-    if SITE == 'lwa1':
-        message_out_host = "10.1.1.2"
-    elif SITE == 'lwasv':
-        message_out_host = "10.1.2.2"
-    elif SITE == 'lwana':
-        message_out_host = "10.1.3.2"
-    nametag = SITE.replace('lwa', '').lower()
+    # Setup SmartCopy
+    smart_copy = SmartCopy(config)
     
-    # Update the configuration and zeroconf
-    config['mcs']['message_out_host'] = message_out_host
-    try:
-        from zeroconf import Zeroconf, ServiceInfo
-        
-        zeroconf = Zeroconf()
-        
-        zconfig = {}
-        for key in config['mcs']:
-            zconfig[key] = str(config['mcs'][key])
-        
-        zinfo = ServiceInfo("_sccs%s._udp.local." % nametag, "Smart copy server._sccs%s._udp.local." % nametag, 
-                            port=config['mcs']['message_in_port'], weight=0, priority=0, 
-                            properties=zconfig, server="%s.local." % socket.gethostname(),
-                            addresses=[socket.inet_aton(config['mcs']['message_out_host']),])
-                    
-        zeroconf.register_service(zinfo)
-        
-    except ImportError:
-        logger.warning('Could not launch zeroconf service info')
-        
-    # Setup SmartCopy control
-    lwaSC = SmartCopy(config)
+    # Setup command processor
+    processor = SmartCommandProcessor(smart_copy, config)
     
-    # Setup the communications channels
-    ## Reference server
-    refServer = ReferenceServer(config['mcs']['message_out_host'], config['mcs']['message_ref_port'])
-    refServer.start()
-    ## MCS server
-    mcsComms = MCSCommunicate(lwaSC, config, args)
-    mcsComms.start()
-    
-    # Initialize the copy manager
-    lwaSC.ini()
-    
-    # Setup handler for SIGTERM so that we aren't left in a funny state
-    def HandleSignalExit(signum, frame, logger=logger, MCSInstance=mcsComms):
-        logger.info('Exiting on signal %i', signum)
-        
-        # Shutdown SmartCopy and close the communications channels
-        tStop = time.time()
-        logger.info('Shutting down SmartCopy, please wait...')
-        MCSInstance.SubSystemInstance.sht()
-        
-        while MCSInstance.SubSystemInstance.currentState['info'] != 'System has been shut down':
+    def handle_shutdown(signum, frame):
+        """Handle shutdown signals"""
+        logger.info('Shutting down on signal %i', signum)
+        processor.stop()
+        smart_copy.sht()
+        while smart_copy.currentState['info'] != 'System has been shut down':
             time.sleep(1)
-        logger.info('Shutdown completed in %.3f seconds', time.time() - tStop)
-        
-        MCSInstance.stop()
-        
-        # Exit
-        logger.info('Finished')
         logging.shutdown()
         sys.exit(0)
-        
-    # Hook in the signal handler - SIGTERM
-    signal.signal(signal.SIGTERM, HandleSignalExit)
-    
-    # Loop and process the MCS data packets as they come in - exit if ctrl-c is 
-    # received
-    logger.info('Ready to communicate')
-    while True:
-        try:
-            mcsComms.receiveCommand()
-            
-        except KeyboardInterrupt:
-            logger.info('Exiting on ctrl-c')
-            break
-            
-        except Exception as e:
-            exc_type, exc_value, exc_traceback = sys.exc_info()
-            logger.error("smart_cmnd.py failed with: %s at line %i", str(e), exc_traceback.tb_lineno)
-                
-            ## Grab the full traceback and save it to a string via StringIO
-            fileObject = StringIO()
-            traceback.print_tb(exc_traceback, file=fileObject)
-            tbString = fileObject.getvalue()
-            fileObject.close()
-            ## Print the traceback to the logger as a series of DEBUG messages
-            for line in tbString.split('\n'):
-                logger.debug("%s", line)
-                
-    # If we've made it this far, we have finished so shutdown SmartCopy and close the 
-    # communications channels
-    tStop = time.time()
-    print('\nShutting down SmartCopy, please wait...')
-    logger.info('Shutting down SmartCopy, please wait...')
-    lwaSC.sht()
-    while lwaSC.currentState['info'] != 'System has been shut down':
-        time.sleep(1)
-    logger.info('Shutdown completed in %.3f seconds', time.time() - tStop)
-    refServer.stop()
-    mcsComms.stop()
-    
-    # Close down zeroconf
-    try:
-        zeroconf.unregister_service(zinfo)
-        zeroconf.close()
-    except NameError:
-        pass
-        
-    # Exit
-    logger.info('Finished')
-    logging.shutdown()
-    sys.exit(0)
 
+    # Register signal handlers
+    signal.signal(signal.SIGTERM, handle_shutdown)
+    
+    # Initialize systems
+    smart_copy.ini()
+    processor.start()
+    
+    logger.info('Ready to process commands')
+    
+    try:
+        while True:
+            msg = processor.mcs_client.receiver.get_message(timeout=1.0)
+            if msg:
+                response = processor.process_message(msg)
+                if response:
+                    processor.mcs_client.sender.send_message(response)
+                    
+    except KeyboardInterrupt:
+        logger.info('Shutting down on CTRL-C')
+        handle_shutdown(signal.SIGTERM, None)
+        
+    except Exception as e:
+        logger.error("Fatal error: %s", str(e))
+        handle_shutdown(signal.SIGTERM, None)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='control the data copies around the station',
+        description='Smart copy command processor',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
-        )
+    )
     parser.add_argument('-c', '--config', type=str, default=DEFAULTS_FILENAME,
-                        help='name of the SHL configuration file to use')
-    parser.add_argument('-l', '--log', type=str, 
-                        help='name of the logfile to write logging information to')
+                        help='Configuration file path')
+    parser.add_argument('-l', '--log', type=str,
+                        help='Log file path')
     parser.add_argument('-d', '--debug', action='store_true',
-                        help='print debug messages as well as info and higher')
-    args = parser.parse_args()
-    main(args)
-    
+                        help='Enable debug logging')
+    main(parser.parse_args())

@@ -1,8 +1,7 @@
 {
   "mcs": {
     "message_in_port": 5050,
-    "message_out_port": 5051,
-    "message_ref_port": 5052
+    "message_out_port": 5051
   },
   
   /* Remote destination bandwidth limit in MB/s, 0 disables limiting */

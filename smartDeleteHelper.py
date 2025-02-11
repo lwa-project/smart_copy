@@ -3,9 +3,9 @@
 import os
 import re
 import sys
-import zmq
 import math
 import time
+import uuid
 import socket
 import argparse
 import subprocess
@@ -132,17 +132,17 @@ def get_time():
     return (mjd, mpm)
 
 
-def buildPayload(source, cmd, data=None, refSocket=None):
-    if refSocket is None:
-        ref = 1
-    else:
-        try:
-            refSocket.send(b"next_ref")
-            ref = int(refSocket.recv(), 10)
-        except zmq.ZMQError as e:
-            raise RuntimeError("Cannot access reference ID server: %s" % str(e))
-            
+def get_reference():
+    ref = 0
+    while ref == 0 or ref == 999999999:
+        ref = int.from_bytes(uuid.uuid1().bytes[:4], byteorder='big')
+        ref %= 1000000000
+    return ref
+
+
+def buildPayload(source, cmd, data=None):
     mjd, mpm = get_time()
+    ref = get_reference()
     
     payload = ''
     payload += 'SCM'
@@ -207,16 +207,9 @@ def main(args):
         inHost += "_"
     try:
         inPort = int(zinfo.properties['message_out_port'], 10)
-        refPort = int(zinfo.properties['message_ref_port'], 10)
     except KeyError:
         inPort = int(zinfo.properties[b'message_out_port'], 10)
-        refPort = int(zinfo.properties[b'message_ref_port'], 10)
         
-    context = zmq.Context()
-    sockRef = context.socket(zmq.REQ)
-    sockRef.connect("tcp://%s:%i" % (outHost, refPort))
-    sockRef.setsockopt(zmq.RCVTIMEO, 5000)
-    
     infs = []
     cmds = []
     # Process the input files
@@ -314,9 +307,6 @@ def main(args):
     except socket.error as e:
         raise RuntimeError(str(e))
         
-    sockRef.close()
-    context.term()
-    
     zeroconf.close()
     time.sleep(0.1)
 
