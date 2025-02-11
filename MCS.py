@@ -171,9 +171,6 @@ class MCSClient:
         recv_addr = ('0.0.0.0', address[1] + 1)
         self.receiver = MessageReceiver(recv_addr, subsystem)
         
-        self.sender.start()
-        self.receiver.start()
-        
     def send_command(self, 
                      destination: str,
                      command: str, 
@@ -198,6 +195,10 @@ class MCSClient:
             raise RuntimeError(f"Command rejected: {response.data[1:].decode()}")
             
         return response
+        
+    def start(self):
+        self.sender.start()
+        self.receiver.start()
         
     def close(self):
         self.sender.stop()

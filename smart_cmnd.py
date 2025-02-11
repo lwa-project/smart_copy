@@ -20,7 +20,7 @@ except ImportError:
     from logging import FileHandler as WatchedFileHandler
 
 from lwa_auth.tools import load_json_config
-from mcs.messaging import MCSClient, MCSMessage
+from MCS import MCSClient, MCSMessage
 from smartFunctions import SmartCopy
 
 __version__ = '0.6'
