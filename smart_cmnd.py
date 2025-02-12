@@ -14,13 +14,14 @@ from datetime import datetime
 from typing import Tuple, Optional
 from functools import wraps
 import collections
+import re
 try:
     from logging.handlers import WatchedFileHandler
 except ImportError:
     from logging import FileHandler as WatchedFileHandler
 
 from lwa_auth.tools import load_json_config
-from MCS import MCSClient, MCSMessage
+from emcs import Server, Message
 from smartFunctions import SmartCopy
 
 __version__ = '0.6'
@@ -52,19 +53,15 @@ class SmartCommandProcessor:
         self.config = config
         self.logger = logging.getLogger(__name__)
         
-        # Setup MCS client
+        # Setup MCS server
         host = self.config['mcs']['message_out_host']
         in_port = self.config['mcs']['message_in_port']
         out_port = self.config['mcs']['message_out_port']
         
-        self.mcs_client = MCSClient(
-            address=(host, out_port),
+        self.mcs_server = Server(
+            address=(host, in_port),
             subsystem=self.subsystem.subSystem
         )
-        
-        # Track recent reference IDs - use deque as a fixed-size FIFO
-        self.recent_refs = collections.deque(maxlen=1000)
-        self.ref_lock = threading.Lock()
         
         # Auto-register command handlers
         self._handlers: Dict[str, Callable] = {}
@@ -76,7 +73,7 @@ class SmartCommandProcessor:
         # Initialize command tracking
         self.command_status = {}
         
-    def process_message(self, msg: MCSMessage) -> MCSMessage:
+    def process_message(self, msg: Message) -> Message:
         """Process an incoming MCS message and return the response"""
         
         # Check destination
@@ -84,16 +81,8 @@ class SmartCommandProcessor:
             return None
             
         full_slot_time = int(time.time())
-        self.logger.debug('Got command %s from %s: ref #%i', 
+        self.logger.debug('Got command %s from %s: ref %s', 
                           msg.command, msg.sender, msg.reference)
-        
-        # Check for duplicate reference ID
-        with self.ref_lock:
-            if msg.reference in self.recent_refs:
-                self.logger.warning('Rejecting duplicate reference ID: %i', msg.reference)
-                return msg.create_reply(False, self.subsystem.currentState['status'], 
-                                      'Duplicate reference ID')
-            self.recent_refs.append(msg.reference)
         
         # Look up handler
         handler = self._handlers.get(msg.command)
@@ -115,11 +104,11 @@ class SmartCommandProcessor:
         return msg.create_reply(status, self.subsystem.currentState['status'], response)
         
     @command_handler('PNG')
-    def ping(self, msg: MCSMessage) -> Tuple[bool, str]:
+    def ping(self, msg: Message) -> Tuple[bool, str]:
         return True, ''
         
     @command_handler('RPT')
-    def report(self, msg: MCSMessage) -> Tuple[bool, str]:
+    def report(self, msg: Message) -> Tuple[bool, str]:
         report_type = msg.data.decode() if isinstance(msg.data, bytes) else msg.data
         
         if not report_type:
@@ -192,7 +181,7 @@ class SmartCommandProcessor:
             return False, f'Unknown active property: {prop}'
             
     @command_handler('INI')
-    def ini(self, msg: MCSMessage) -> Tuple[bool, str]:
+    def ini(self, msg: Message) -> Tuple[bool, str]:
         status, exit_code = self.subsystem.ini(refID=msg.reference)
         if status:
             response = ''
@@ -202,7 +191,7 @@ class SmartCommandProcessor:
         return status, exit_code
         
     @command_handler('SHT')
-    def sht(self, msg: MCSMessage) -> Tuple[bool, str]:
+    def sht(self, msg: Message) -> Tuple[bool, str]:
         status, exit_code = self.subsystem.sht(mode=msg.data)
         if status:
             response = ''
@@ -212,24 +201,42 @@ class SmartCommandProcessor:
         return status, exit_code
         
     @command_handler('SCP')
-    def copy(self, msg: MCSMessage) -> Tuple[bool, str]:
-        status, response = self._handle_copy(msg.data, msg.reference)
+    def copy(self, msg: Message) -> Tuple[bool, str]:
+        src, dest = msg.data.split('->', 1)
+        host, hostpath = re.split(r'(?<!\\)\:', src, 1)
+        dest, destpath = re.split(r'(?<!\\)\:', dest, 1)
+        status, response = self.subsystem.addCopyCommand(host, host, hostpath, dest, destpath)
         return status, response
         
     @command_handler('PAU')
+    def pause(self, msg: Message) -> Tuple[bool, str]:
+        dr = msg.data
+        status, response = self.subsystem.pauseCopyQueue(dr)
+        return status, response
+        
     @command_handler('RES')
-    def pause_resume(self, msg: MCSMessage) -> Tuple[bool, str]:
-        status, response = self._handle_queue_control(msg.command, msg.data, msg.reference)
+    def resume(self, msg: Message) -> Tuple[bool, str]:
+        dr = msg.data
+        status, response = self.subsystem.resumeCopyQueue(dr)
         return status, response
     
     @command_handler('SCN')
-    def cancel(self, msg: MCSMessage) -> Tuple[bool, str]:
-        status, response = self._handle_cancel(msg.data, msg.reference)
+    def cancel(self, msg: Message) -> Tuple[bool, str]:
+        id = msg.data
+        status, response = self.subsystem.cancelCopyCommand(id)
         return status, response
         
     @command_handler('SRM')
-    def remove(self, msg: MCSMessage) -> Tuple[bool, str]:
-        status, response = self._handle_delete(msg.data, msg.reference)
+    def remove(self, msg: Message) -> Tuple[bool, str]:
+        now = False
+        if msg.data[:5] == '-tNOW':
+            now = True
+            data = msg.data.split('-tNOW', 1)[1]
+            data = data.strip()
+        else:
+            data = msg.data
+        host, hostpath = re.split(r'(?<!\\)\:', data, 1)
+        status, response = self.subsystem.addDeleteCommand(host, host, hostpath, now=now)
         return status, response
         
     def _track_command(self, slot_time: int, cmd: str, ref: int, exit_code: int):
@@ -246,11 +253,11 @@ class SmartCommandProcessor:
 
     def start(self):
         """Start the command processor"""
-        self.mcs_client.start()
+        self.mcs_server.start()
         
     def stop(self):
         """Stop the command processor"""
-        self.mcs_client.close()
+        self.mcs_server.close()
 
 
 def main(args):
@@ -312,11 +319,11 @@ def main(args):
     
     try:
         while True:
-            msg = processor.mcs_client.receiver.get_message(timeout=1.0)
+            msg = processor.mcs_server.receive_command(timeout=1.0)
             if msg:
                 response = processor.process_message(msg)
                 if response:
-                    processor.mcs_client.sender.send_message(response)
+                    processor.mcs_server.send_reply(response)
                     
     except KeyboardInterrupt:
         logger.info('Shutting down on CTRL-C')

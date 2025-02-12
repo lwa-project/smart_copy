@@ -1,10 +1,10 @@
 """
-Base module for dealing with MCS communication.  This module provides the
-MCSComminunicate framework that specified how to processes MCS commands that
+Base module for dealing with enhanced MCS communication.  This module provides
+the Client framework that specified how to processes enhanced MCS commands that
 arrive via UDP.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Optional, Tuple, Dict, Any, Union
 import queue
 import socket
@@ -12,69 +12,52 @@ import threading
 import time
 from datetime import datetime
 import uuid
+import ubjson
+import math
 
 @dataclass
-class MCSMessage:
-    """Core message class for MCS protocol"""
+class Message:
+    """Core message class for enhanced MCS protocol"""
     destination: str 
     sender: str
     command: str
-    reference: int
-    data: Optional[Union[str, bytes]] = None
+    reference: str
+    data: Optional[Union[str, bytes, Dict]] = None
     dst_ip: Optional[str] = None
     src_ip: Optional[str] = None
+    timestamp: Optional[Dict] = None
     
-    @property
-    def data_length(self) -> int:
-        """Get length of data payload"""
-        return len(self.data) if self.data else 0
+    def __post_init__(self):
+        if self.timestamp is None:
+            mjd, mpm = get_time()
+            self.timestamp = {
+                "mjd": mjd,
+                "mpm": mpm,
+                "scale": 'UTC'
+            }
     
-    def encode(self) -> bytes:
-        """Encode message for network transmission"""
+    def to_json(self) -> Dict:
         mjd, mpm = get_time()
-        header = (
-            f"{self.destination:<3}"
-            f"{self.sender:<3}"
-            f"{self.command:<3}"
-            f"{self.reference:09d}"
-            f"{self.data_length:04d}"
-            f"{mjd:06d}"
-            f"{mpm:09d} "
-        ).encode()
+        msg_dict = asdict(self)
+        return msg_dict
         
-        if isinstance(self.data, str):
-            data = self.data.encode()
-        else:
-            data = self.data if self.data else b''
-            
-        return header + data
+    def encode(self) -> bytes:
+        json_data = self.to_json()
+        return ubjson.dumpb(json_data)
     
     @classmethod
-    def decode(cls, packet: bytes, src_ip: Optional[str] = None) -> 'MCSMessage':
-        """Decode network packet into message"""
-        header = packet[:38].decode()
-        data = packet[38:38 + int(header[18:22])]
+    def decode(cls, packet: bytes, src_ip: Optional[str] = None) -> 'Message':
+        data = ubjson.loadb(packet)
+        return cls(**data)
         
-        return cls(
-            destination=header[:3].strip(),
-            sender=header[3:6].strip(), 
-            command=header[6:9].strip(),
-            reference=int(header[9:18]),
-            data=data,
-            src_ip=src_ip
-        )
-    
-    def create_reply(self, accept: bool, status: str, data: Union[str, bytes] = b'') -> 'MCSMessage':
-        """Create a reply message"""
-        response = 'A' if accept else 'R'
-        reply_data = response.encode() + f"{status:>7}".encode()
-        
-        if isinstance(data, str):
-            reply_data += data.encode()
-        else:
-            reply_data += data
+    def create_reply(self, accept: bool, status: str, data: Union[str, bytes] = b'') -> 'Message':
+        reply_data = {'status': status,
+                      'accepted': accept,
+                      'data': None}
+        if data:
+            reply_data['data'] = data
             
-        return MCSMessage(
+        return Message(
             destination=self.sender,
             sender=self.destination,
             command=self.command,
@@ -84,7 +67,7 @@ class MCSMessage:
         )
 
 class MessageReceiver(threading.Thread):
-    """Thread for receiving MCS messages"""
+    """Thread for receiving enhanced MCS messages"""
     
     def __init__(self, address: Tuple[str, int], subsystem: str = 'ALL'):
         super().__init__()
@@ -92,6 +75,7 @@ class MessageReceiver(threading.Thread):
         self.address = address
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
         self.socket.bind(address)
+        self.socket.settimeout(5.0)
         self.msg_queue = queue.Queue()
         self.running = threading.Event()
         self.daemon = True
@@ -102,7 +86,7 @@ class MessageReceiver(threading.Thread):
             try:
                 data, addr = self.socket.recvfrom(16384)
                 if data:
-                    msg = MCSMessage.decode(data, addr[0])
+                    msg = Message.decode(data, addr[0])
                     if (self.subsystem == 'ALL' or
                         msg.destination == 'ALL' or
                         msg.destination == self.subsystem):
@@ -114,14 +98,14 @@ class MessageReceiver(threading.Thread):
         self.running.clear()
         self.socket.close()
         
-    def get_message(self, timeout: Optional[float] = None) -> Optional[MCSMessage]:
+    def get_message(self, timeout: Optional[float] = None) -> Optional[Message]:
         try:
             return self.msg_queue.get(timeout=timeout)
         except queue.Empty:
             return None
 
 class MessageSender(threading.Thread):
-    """Thread for sending MCS messages"""
+    """Thread for sending enhanced MCS messages"""
     
     def __init__(self, address: Tuple[str, int], subsystem: str):
         super().__init__()
@@ -134,7 +118,7 @@ class MessageSender(threading.Thread):
         
     def run(self):
         self.running.set()
-        while self.running.set():
+        while self.running.is_set():
             try:
                 msg = self.msg_queue.get(timeout=1.0)
                 if msg is None:
@@ -150,7 +134,7 @@ class MessageSender(threading.Thread):
                         self.socket.sendto(encoded, (dst_ip, dst_port))
                         break
                     except socket.error:
-                        time.sleep(0.001)
+                        time.sleep(0.005)
                         
             except queue.Empty:
                 continue
@@ -159,25 +143,56 @@ class MessageSender(threading.Thread):
         self.running.clear()
         self.socket.close()
         
-    def send_message(self, msg: MCSMessage):
+    def send_message(self, msg: Message):
         self.msg_queue.put(msg)
 
-class MCSClient:
-    """High-level client for MCS communication"""
+class Server:
+    """High-level server for enhanced MCS communication"""
+
+    def __init__(self, address: Tuple[str, int], subsystem: str = 'MCS'):
+        self.subsystem = subsystem
+        send_addr = ('0.0.0.0', address[1] + 1)
+        self.sender = MessageSender(send_addr, subsystem)
+        self.receiver = MessageReceiver(address, subsystem)
+        
+    def receive_command(self, timeout: float = 5.0) -> Optional[Message]:
+        return self.receiver.get_message(timeout=timeout)
+        
+    def send_reply(self, response: Message):
+        self.sender.send_message(response)
+        
+    def start(self):
+        self.sender.start()
+        self.receiver.start()
+        
+    def close(self):
+        self.sender.stop()
+        self.receiver.stop()
+        self.sender.join()
+        self.receiver.join()
+        
+    def __enter__(self):
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+class Client:
+    """High-level client for enhanced MCS communication"""
     
     def __init__(self, address: Tuple[str, int], subsystem: str = 'MCS'):
         self.subsystem = subsystem
-        self.sender = MessageSender(address, subsystem)
-        recv_addr = ('0.0.0.0', address[1] + 1)
-        self.receiver = MessageReceiver(recv_addr, subsystem)
+        send_addr = ('0.0.0.0', address[1] - 1)
+        self.sender = MessageSender(send_addr, subsystem)
+        self.receiver = MessageReceiver(address, subsystem)
         
     def send_command(self, 
                      destination: str,
                      command: str, 
                      data: Union[str, bytes] = b'',
-                     timeout: float = 5.0) -> MCSMessage:
+                     timeout: float = 5.0) -> Message:
         """Send command and wait for response"""
-        msg = MCSMessage(
+        msg = Message(
             destination=destination,
             sender=self.subsystem,
             command=command,
@@ -191,8 +206,8 @@ class MCSClient:
         if not response:
             raise TimeoutError("No response received")
             
-        if response.data[:1] != b'A':
-            raise RuntimeError(f"Command rejected: {response.data[1:].decode()}")
+        if response.data['accepted'] != True:
+            raise RuntimeError(f"Command rejected: {response.data}")
             
         return response
         
@@ -213,27 +228,35 @@ class MCSClient:
         self.close()
 
 # Utility functions
-def get_reference() -> int:
-    ref = 0
-    while ref == 0 or ref == 999999999:
-        ref = int.from_bytes(uuid.uuid1().bytes[:4], byteorder='big')
-        ref %= 1000000000
-    return ref
+def get_reference() -> str:
+    return str(uuid.uuid1())
 
 def get_time() -> Tuple[int, int]:
-    """Get current MJD and MPM"""
+    """
+    Return a two-element tuple of the current MJD and MPM.
+    """
+    
+    # determine current time
     dt = datetime.utcnow()
+    year        = dt.year             
+    month       = dt.month      
+    day         = dt.day    
+    hour        = dt.hour
+    minute      = dt.minute
+    second      = dt.second     
+    millisecond = dt.microsecond / 1000
     
-    # MJD calculation
-    a = (14 - dt.month) // 12
-    y = dt.year + 4800 - a
-    m = dt.month + (12 * a) - 3
+    # compute MJD         
+    # adapted from http://paste.lisp.org/display/73536
+    # can check result using http://www.csgnetwork.com/julianmodifdateconv.html
+    a = (14 - month) // 12
+    y = year + 4800 - a          
+    m = month + (12 * a) - 3                    
+    p = day + (((153 * m) + 2) // 5) + (365 * y)   
+    q = (y // 4) - (y // 100) + (y // 400) - 32045
+    mjd = int(math.floor( (p+q) - 2400000.5))  
     
-    mjd = (dt.day + ((153 * m + 2) // 5) + 365 * y + y // 4 
-           - y // 100 + y // 400 - 32045)
+    # compute MPM
+    mpm = int(math.floor( (hour*3600 + minute*60 + second)*1000 + millisecond ))
     
-    # MPM calculation  
-    mpm = ((dt.hour * 3600 + dt.minute * 60 + dt.second) * 1000 
-           + dt.microsecond // 1000)
-           
-    return mjd, mpm
+    return (mjd, mpm)
