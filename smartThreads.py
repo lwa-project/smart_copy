@@ -109,7 +109,7 @@ class MonitorStation(object):
                 self.SCCallbackInstance.processDRStateChange(dr, self.busy[dr])
                 
         self.thread = threading.Thread(target=self.pollStation, name='pollStation')
-        self.thread.setDaemon(1)
+        self.thread.daemon = 1
         self.alive.set()
         self.thread.start()
         time.sleep(1)
@@ -209,7 +209,7 @@ class MonitorStation(object):
         watch.register(tail.stdout)
         
         # Go!
-        while self.alive.isSet():
+        while self.alive.is_set():
             try:
                 ## Is there anything to read?
                 if watch.poll(1):
@@ -293,7 +293,7 @@ class ManageDR(object):
             self.stop()
             
         self.thread = threading.Thread(target=self.processQueue, name='processQueue%s' % self.dr)
-        self.thread.setDaemon(1)
+        self.thread.daemon = 1
         self.alive.set()
         self.thread.start()
         time.sleep(1)
@@ -356,7 +356,7 @@ class ManageDR(object):
         # Purges run late in the day (18:00 UTC)
         tLastPurge = (int(time.time())/86400)*86400 + 18*3600
         
-        while self.alive.isSet():
+        while self.alive.is_set():
             tStart = time.time()
             
             try:
@@ -699,7 +699,7 @@ class MonitorErrorLogs(object):
             self.stop()
             
         self.thread = threading.Thread(target=self.monitorLogs, name='monitorLogs')
-        self.thread.setDaemon(1)
+        self.thread.daemon = 1
         self.alive.set()
         self.thread.start()
         time.sleep(1)
@@ -724,7 +724,7 @@ class MonitorErrorLogs(object):
         # Checks run even later in the day (22:00 UTC)
         tLastCheck = (int(time.time())/86400)*86400 + 22*3600
         
-        while self.alive.isSet():
+        while self.alive.is_set():
             tStart = time.time()
             
             if tStart - tLastCheck >= 86400:

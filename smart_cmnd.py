@@ -72,8 +72,6 @@ class SmartCommandProcessor:
         
         # Setup MCS server
         in_port = self.config['mcs']['message_in_port']
-        out_port = self.config['mcs']['message_out_port']
-        
         self.mcs_server = Server(
             address=(get_server_address(), in_port),
             subsystem=self.subsystem.subSystem

@@ -83,7 +83,7 @@ class SmartCopy(object):
         # Start the process in the background
         tStart = time.time()
         thread = threading.Thread(target=self.__iniProcess, args=(tStart, refID))
-        thread.setDaemon(1)
+        thread.daemon = 1
         thread.start()
         
         return True, 0
@@ -152,7 +152,7 @@ class SmartCopy(object):
             return False, 0x03
             
         thread = threading.Thread(target=self.__shtProcess)
-        thread.setDaemon(1)
+        thread.daemon = 1
         thread.start()
         return True, 0
         

@@ -348,7 +348,7 @@ class InterruptibleCopy(object):
         if self.thread is None:
             return False
         else:
-            if self.thread.isAlive():
+            if self.thread.is_alive():
                 return True
             else:
                 return False
@@ -425,7 +425,7 @@ class InterruptibleCopy(object):
             else:
                 target = self._runCopy
             self.thread = threading.Thread(target=target)
-            self.thread.setDaemon(1)
+            self.thread.daemon = 1
             self.thread.start()
             if self.status != 'paused':
                 self.tries += 1
