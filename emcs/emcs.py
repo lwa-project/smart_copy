@@ -185,10 +185,10 @@ class Server:
 class Client:
     """High-level client for enhanced MCS communication"""
     
-    def __init__(self, address: Tuple[str, int], subsystem: str = 'MCS'):
+    def __init__(self, server_address: Tuple[str, int], subsystem: str = 'MCS'):
         self.subsystem = subsystem
-        send_addr = ('0.0.0.0', address[1] - 1)
-        self.sender = MessageSender(send_addr, subsystem)
+        self.sender = MessageSender(server_addr, subsystem)
+        recv_addr = ('0.0.0.0', address[1] + 1)
         self.receiver = MessageReceiver(address, subsystem)
         
     def send_command(self, 

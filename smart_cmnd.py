@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import re
 import sys
 import git
 import time
@@ -8,13 +9,12 @@ import signal
 import socket
 import logging
 import argparse
+import netifaces
 import threading
+import collections
 from pathlib import Path
-from datetime import datetime
 from typing import Tuple, Optional
 from functools import wraps
-import collections
-import re
 try:
     from logging.handlers import WatchedFileHandler
 except ImportError:
@@ -31,6 +31,23 @@ SITE = socket.gethostname().split('-', 1)[0]
 
 # Default Configuration File
 DEFAULTS_FILENAME = '/lwa/software/defaults.json'
+
+
+def get_server_address() -> str:
+    """
+    Return the IP address of the smart copy server by looking for an interface
+    on a 10.1.x.0 network.
+    """
+    
+    for interface in netifaces.interfaces():
+        addrs = netifaces.ifaddresses(interface)
+        if netifaces.AF_INET in addrs:
+            for addr in addrs[netifaces.AF_INET]:
+                ip = addr['addr']
+                if ip.startswith('10.1.'):
+                    network = '.'.join(ip.split('.')[:3])
+                    return f"{network}.2"
+    raise RuntimeError("Could not find 10.1.x.0 network interface")
 
 
 def command_handler(command: str):
@@ -54,12 +71,11 @@ class SmartCommandProcessor:
         self.logger = logging.getLogger(__name__)
         
         # Setup MCS server
-        host = self.config['mcs']['message_out_host']
         in_port = self.config['mcs']['message_in_port']
         out_port = self.config['mcs']['message_out_port']
         
         self.mcs_server = Server(
-            address=(host, in_port),
+            address=(get_server_address(), in_port),
             subsystem=self.subsystem.subSystem
         )
         
