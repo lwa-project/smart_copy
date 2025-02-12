@@ -15,6 +15,8 @@ import uuid
 import ubjson
 import math
 
+MESSAGE_MAX_BYTES = 16384
+
 @dataclass
 class Message:
     """Core message class for enhanced MCS protocol"""
@@ -43,7 +45,10 @@ class Message:
         
     def encode(self) -> bytes:
         json_data = self.to_json()
-        return ubjson.dumpb(json_data)
+        packet = ubjson.dumpb(json_data)
+        if len(packet) > MESSAGE_MAX_BYTES:
+            raise RuntimeError(f"Message exceeds the maximum size ({len(packet)} > {MESSAGE_MAX_BYTES})")
+        return packet
     
     @classmethod
     def decode(cls, packet: bytes, src_ip: Optional[str] = None) -> 'Message':
@@ -84,7 +89,7 @@ class MessageReceiver(threading.Thread):
         self.running.set()
         while self.running.is_set():
             try:
-                data, addr = self.socket.recvfrom(16384)
+                data, addr = self.socket.recvfrom(MESSAGE_MAX_BYTES)
                 if data:
                     msg = Message.decode(data, addr[0])
                     if (self.subsystem == 'ALL' or
