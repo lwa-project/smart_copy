@@ -580,6 +580,7 @@ class InterruptibleCopy(object):
                 
         # Pull out anything that might be stuck in the buffers
         self.stdout, self.stderr = self.process.communicate()
+        self.stdout = self.stdout.decode()
         
         smartCommonLogger.debug('PID %i exited with code %i', self.process.pid, self.process.returncode)
         
