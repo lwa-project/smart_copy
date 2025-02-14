@@ -553,7 +553,7 @@ class ManageDR(object):
         Return the active copy ID.
         """
         
-        if self.active is not None and self.active.isRunning():
+        if self.active is not None:
             return True, self.active.id
         else:
             return True, 'None'
@@ -577,7 +577,7 @@ class ManageDR(object):
         Return the number of bytes transferred by the active copy.
         """
         
-        if self.active is not None and self.active.isRunning():
+        if self.active is not None:
             return True, self.active.getBytesTransferred()
         else:
             return True, 'None'
@@ -587,7 +587,7 @@ class ManageDR(object):
         Return the percentage progress for the active copy.
         """
         
-        if self.active is not None and self.active.isRunning():
+        if self.active is not None:
             return True, self.active.getProgress()
         else:
             return True, 'None'
@@ -597,7 +597,7 @@ class ManageDR(object):
         Return the speed of the active copy.
         """
         
-        if self.active is not None and self.active.isRunning():
+        if self.active is not None:
             return True, self.active.getSpeed()
         else:
             return True, 'None'
@@ -607,7 +607,7 @@ class ManageDR(object):
         Return the last rsync output line.
         """
         
-        if self.active is not None and self.active.isRunning():
+        if self.active is not None:
             return True, self.active.getTimeRemaining()
         else:
             return True, 'None'

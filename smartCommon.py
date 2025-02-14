@@ -303,7 +303,7 @@ class InterruptibleCopy(object):
         Return the current copy speed or 'paused' if the copy is paused.
         """
         
-        if self.isRunning:
+        if self.isRunning():
             mtch = self._rsyncRE.search(self.stdout)
             if mtch is not None:
                 speed = mtch.group('speed')
@@ -319,7 +319,7 @@ class InterruptibleCopy(object):
         Return the estimated time remaining or 'unknown' if the copy is paused.
         """
         
-        if self.isRunning:
+        if self.isRunning():
             mtch = self._rsyncRE.search(self.stdout)
             if mtch is not None:
                 rema = mtch.group('remaining')
@@ -445,7 +445,7 @@ class InterruptibleCopy(object):
         Cancel the copy.
         """
         
-        if self.isRunning:
+        if self.isRunning():
             self.pause()
         self.status = 'canceled'
         
