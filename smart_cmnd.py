@@ -20,6 +20,7 @@ except ImportError:
 import traceback
 from io import StringIO
 from collections import deque
+import netifaces
 
 from lwa_auth.tools import load_json_config
 
@@ -39,6 +40,23 @@ SITE = socket.gethostname().split('-', 1)[0]
 # Default Configuration File
 #
 DEFAULTS_FILENAME = '/lwa/software/defaults.json'
+
+
+def getServerAddress():
+    """
+    Return the IP address of the smart copy server by looking for an interface
+    on a 10.1.x.0 network.
+    """
+    
+    for interface in netifaces.interfaces():
+        addrs = netifaces.ifaddresses(interface)
+        if netifaces.AF_INET in addrs:
+            for addr in addrs[netifaces.AF_INET]:
+                ip = addr['addr']
+                if ip.startswith('10.1.'):
+                    network = '.'.join(ip.split('.')[:3])
+                    return f"{network}.2"
+    raise RuntimeError("Could not find 10.1.x.0 network interface")
 
 
 class MCSCommunicate(Communicate):
@@ -405,12 +423,7 @@ def main(args):
     config = load_json_config(args.config)
     
     # Set the site-dependant `message_out_host` IP address
-    if SITE == 'lwa1':
-        message_out_host = "10.1.1.2"
-    elif SITE == 'lwasv':
-        message_out_host = "10.1.2.2"
-    elif SITE == 'lwana':
-        message_out_host = "10.1.3.2"
+    config['mcs']['message_out_host'] = getServerAddress()
     nametag = SITE.replace('lwa', '').lower()
     
     # Setup SmartCopy control
