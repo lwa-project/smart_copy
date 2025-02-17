@@ -643,7 +643,7 @@ class ManageDR(object):
             ### Purge the files, keeping track of what we can't do and what has failed
             entries = lines.split('\n')[:-1]
             retry, failed = [], []
-            for item in completed
+            for item in completed:
                 host, filename, fsize = entry
                 try:
                     assert(not self.inhibit)
