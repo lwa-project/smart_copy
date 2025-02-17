@@ -60,7 +60,6 @@ class SmartCopy(object):
         ## Monitoring and background threads (antenna statistics, flags, etc.)
         self.currentState['pollingThread'] = None
         self.currentState['drThreads'] = None
-        self.currentState['errorThread'] = None
         
     def getState(self):
         """
@@ -124,7 +123,6 @@ class SmartCopy(object):
             self.currentState['drThreads'][dr].start()
             self.resumeCopyQueue(dr, internal=True)
         self.currentState['pollingThread'].start()
-        self.currentState['errorThread'].start()
         
         self.currentState['status'] = 'NORMAL'
         self.currentState['info'] = 'System calibrated and operating normally'
