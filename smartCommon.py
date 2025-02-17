@@ -248,7 +248,7 @@ class DiskBackedQueue(Queue.Queue):
                 # Insert with queue name
                 
                 self._cursor.execute(
-                    """INSERT INTO queue_items (queue_name, host, hostpath, dest, destpath, command_id, retry, last_try) 
+                    """INSERT INTO queue_items (queue_name, host, hostpath, dest, destpath, command_id, retry_count, last_try) 
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (self.queue_name, *item)
                 )
@@ -325,7 +325,7 @@ class DiskBackedQueue(Queue.Queue):
                 # Insert with queue name
                 
                 self._cursor.execute(
-                    """INSERT INTO queue_items (queue_name, host, hostpath, dest, destpath, command_id, retry, last_try, status) 
+                    """INSERT INTO queue_items (queue_name, host, hostpath, dest, destpath, command_id, retry_count, last_try, status) 
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (self.queue_name, *item)
                 )
@@ -390,7 +390,7 @@ class DiskBackedQueue(Queue.Queue):
                 # Insert with queue name
                 
                 self._cursor.execute(
-                    """INSERT INTO queue_items (queue_name, host, hostpath, dest, destpath, command_id, retry, last_try, status) 
+                    """INSERT INTO queue_items (queue_name, host, hostpath, dest, destpath, command_id, retry_count, last_try, status) 
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (self.queue_name, *item)
                 )
