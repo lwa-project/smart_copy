@@ -81,7 +81,7 @@ class LimitedSizeDict(OrderedDict):
                 self.popitem(last=False)
 
 
-class DiskBackedQueue(queue.Queue):
+class DiskBackedQueue(Queue.Queue):
     """
     A thread-safe FIFO queue that persists items to disk using SQLite,
     supporting multiple queues in a single database.
@@ -113,8 +113,8 @@ class DiskBackedQueue(queue.Queue):
 
     # Class-level connection management
     _db_lock = threading.RLock()
-    _conn: Optional[sqlite3.Connection] = None
-    _cursor: Optional[sqlite3.Cursor] = None
+    _conn = None
+    _cursor = None
     _ref_count: int = 0
 
     @classmethod
@@ -340,9 +340,9 @@ class DiskBackedQueue(queue.Queue):
                 
     def get_completed(self):
         """Return a list of completed files as a three-element tuples containing
-         host, host path, and file size."""
-         with self._lock:
-             try:
+        host, host path, and file size."""
+        with self._lock:
+            try:
                 self._cursor.execute(
                     """SELECT host, hostpath, filesize
                        FROM queue_items
@@ -355,7 +355,7 @@ class DiskBackedQueue(queue.Queue):
             except sqlite3.Error as e:
                 logger.error(f"Failed to get completed files for {self.queue_name}: {e}")
                 raise
-                
+                    
     def purge_completed(self):
         """Remove all completed files from the queue."""
         with self._lock:
@@ -405,9 +405,9 @@ class DiskBackedQueue(queue.Queue):
                 
     def get_failed(self):
         """Return a list of failed files as a four-element tuples containing
-         host, host path, failure reason, and file size."""
-         with self._lock:
-             try:
+        host, host path, failure reason, and file size."""
+        with self._lock:
+            try:
                 self._cursor.execute(
                     """SELECT host, hostpath, destpath, filesize
                        FROM queue_items
