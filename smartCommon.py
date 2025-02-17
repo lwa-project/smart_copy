@@ -223,8 +223,8 @@ class DiskBackedQueue(Queue.Queue):
                 
                 for row in rows:
                     try:
-                        super().put(*row)
-                        self.restored_items.append(*row)
+                        super().put(row)
+                        self.restored_items.append(row)
                     except (pickle.UnpicklingError, EOFError) as e:
                         smartCommonLogger.warning(f"Failed to restore queue item in {self.queue_name}: {e}")
                 
