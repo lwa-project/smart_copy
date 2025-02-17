@@ -108,6 +108,8 @@ def main(args):
     except IndexError:
         inHost = socket.gethostname().upper()
     inHost = inHost[:3]
+    while len(inHost) < 3:
+        inHost += "_"
     inPort = 5051
     refPort = 5052
     
