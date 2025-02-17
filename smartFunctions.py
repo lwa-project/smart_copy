@@ -118,12 +118,7 @@ class SmartCopy(object):
                 dr = 'DR%i' % i
                 self.currentState['drThreads'][dr] = ManageDR(dr, self.config, SCCallbackInstance=self)
                 self.globalInhibit[dr] = True
-        ## Error log monitor
-        if self.currentState['errorThread'] is not None:
-            self.currentState['errorThread'].stop()
-        else:
-            self.currentState['errorThread'] = MonitorErrorLogs(self.config)
-            
+                
         # Start all threads back up
         for dr in self.currentState['drThreads']:
             self.currentState['drThreads'][dr].start()
@@ -180,10 +175,7 @@ class SmartCopy(object):
             for dr in self.currentState['drThreads']:
                 self.pauseCopyQueue(dr, internal=True)
                 self.currentState['drThreads'][dr].stop()
-        ## Error log monitor
-        if self.currentState['errorThread'] is not None:
-            self.currentState['errorThread'].stop()
-            
+                
         self.currentState['status'] = 'SHUTDWN'
         self.currentState['info'] = 'System has been shut down'
         self.currentState['lastLog'] = 'System has been shut down'
@@ -382,6 +374,30 @@ class SmartCopy(object):
                 status, value = self.currentState['drThreads'][dr].getQueueSize()
                 if not status:
                     self.currentState['lastLog'] = 'QUEUE: error getting queue size'
+                    return False, 0
+                else:
+                    return True, value
+            except KeyError:
+                self.currentState['lastLog'] = 'QUEUE: unknown data recorder %s' % dr
+                return False, 0
+                
+    def getDRQueueStats(self):
+        """
+        Return the queue status (pending, processing, completed, failed) of the
+        specified data recorder.  Return a two-element tuple of (success, value)
+        where success is a boolean related to if the size was found.  See the
+        currentState['lastLog'] entry for the reason for failure if the returned
+        success value is False.
+        """
+        
+        if self.currentState['drThreads'] is None:
+            self.currentState['lastLog'] = 'QUEUE: data recorder monitoring threads are not running'
+            return False, 0
+        else:
+            try:
+                status, value = self.currentState['drThreads'][dr].getQueueStats()
+                if not status:
+                    self.currentState['lastLog'] = 'QUEUE: error getting queue stats'
                     return False, 0
                 else:
                     return True, value

@@ -18,7 +18,7 @@ from socket import gethostname
 
 from collections import OrderedDict
 
-__version__ = '0.4'
+__version__ = '0.5'
 __all__ = ['SerialNumber', 'LimitedSizeDict', 'DiskBackedQueue', 
            'InterruptibleCopy', 'DELETE_MARKER_QUEUE', 'DELETE_MARKER_NOW']
 
@@ -95,10 +95,16 @@ class DiskBackedQueue(queue.Queue):
     CREATE TABLE IF NOT EXISTS queue_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         queue_name TEXT NOT NULL,
-        item BLOB NOT NULL,
+        host TEXT NOT NULL,
+        hostpath TEXT NOT NULL,
+        dest TEXT NOT NULL,
+        destpath TEXT NOT NULL,
+        filesize INTEGER DEFAULT 0,
+        command_id INTEGER NOT NULL,
+        retry_count INTEGER DEFAULT 0,
+        last_try REAL DEFAULT 0.0,
         status TEXT DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        checksum TEXT NOT NULL
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     
     CREATE INDEX IF NOT EXISTS idx_queue_status ON queue_items(queue_name, status);
@@ -208,18 +214,17 @@ class DiskBackedQueue(queue.Queue):
         with self._lock:
             try:
                 self._cursor.execute(
-                    """SELECT item FROM queue_items 
+                    """SELECT host,hostpath,dest,destpath,command_id,retry_count,last_try FROM queue_items 
                        WHERE queue_name = ? AND status = 'pending' 
-                       ORDER BY id""",
+                       ORDER BY command_id""",
                     (self.queue_name,)
                 )
                 rows = self._cursor.fetchall()
                 
                 for row in rows:
                     try:
-                        item = pickle.loads(row[0])
-                        super().put(item)
-                        self.restored_items.append(item)
+                        super().put(*row)
+                        self.restored_items.append(*row)
                     except (pickle.UnpicklingError, EOFError) as e:
                         smartCommonLogger.warning(f"Failed to restore queue item in {self.queue_name}: {e}")
                 
@@ -229,24 +234,23 @@ class DiskBackedQueue(queue.Queue):
                 smartCommonLogger.error(f"Failed to restore items for {self.queue_name}: {e}")
                 raise
 
-    def put(self, item, block=True, timeout=None):
+    def put(self, host, hostpath, dest, destpath, command_id, retry_count=0, last_retry=0.0, block=True, timeout=None):
         """Put an item into the queue."""
+        
         with self._lock:
+            item = (host, hostpath, dest, destpath, command_id, retry_count, last_retry)
             super().put(item, block, timeout)
             
             try:
                 # Start transaction
                 self._cursor.execute("BEGIN IMMEDIATE")
                 
-                # Serialize item and compute checksum
-                pickled_item = pickle.dumps(item, protocol=pickle.HIGHEST_PROTOCOL)
-                checksum = str(hash(pickled_item))
-                
                 # Insert with queue name
+                
                 self._cursor.execute(
-                    """INSERT INTO queue_items (queue_name, item, checksum) 
-                       VALUES (?, ?, ?)""",
-                    (self.queue_name, pickled_item, checksum)
+                    """INSERT INTO queue_items (queue_name, host, hostpath, dest, destpath, command_id, retry, last_try) 
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (self.queue_name, *item)
                 )
                 
                 # Commit transaction
@@ -261,20 +265,18 @@ class DiskBackedQueue(queue.Queue):
         """Get an item from the queue."""
         with self._lock:
             item = super().get(block, timeout)
+            host, hostpath, dest, destpath, command_id, retry_count, last_retry = item
             
             try:
                 # Start transaction
                 self._cursor.execute("BEGIN IMMEDIATE")
                 
-                pickled_item = pickle.dumps(item, protocol=pickle.HIGHEST_PROTOCOL)
-                checksum = str(hash(pickled_item))
-                
                 self._cursor.execute(
                     """UPDATE queue_items 
                        SET status = 'processing' 
-                       WHERE queue_name = ? AND item = ? AND checksum = ? 
+                       WHERE queue_name = ? AND command_id = ? 
                        AND status = 'pending'""",
-                    (self.queue_name, pickled_item, checksum)
+                    (self.queue_name, command_id)
                 )
                 
                 # Commit transaction
@@ -311,6 +313,136 @@ class DiskBackedQueue(queue.Queue):
                 smartCommonLogger.error(f"Failed to mark queue item as done for {self.queue_name}: {e}")
                 raise
 
+    def add_completed(self, host, hostpath, filesize=0):
+        """A file as successfully completed."""
+        with self._lock:
+            item = (host, hostpath, host, hostpath, filesize, 0, time.time(), 'completed')
+            
+            try:
+                # Start transaction
+                self._cursor.execute("BEGIN IMMEDIATE")
+                
+                # Insert with queue name
+                
+                self._cursor.execute(
+                    """INSERT INTO queue_items (queue_name, host, hostpath, dest, destpath, command_id, retry, last_try, status) 
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (self.queue_name, *item)
+                )
+                
+                # Commit transaction
+                self._conn.commit()
+                
+            except sqlite3.Error as e:
+                self._conn.rollback()
+                smartCommonLogger.error(f"Failed to add completed file to {self.queue_name}: {e}")
+                raise
+                
+    def get_completed(self):
+        """Return a list of completed files as a three-element tuples containing
+         host, host path, and file size."""
+         with self._lock:
+             try:
+                self._cursor.execute(
+                    """SELECT host, hostpath, filesize
+                       FROM queue_items
+                       WHERE queue_name = ? AND status = 'completed'
+                       ORDER BY hostpath""",
+                    (self.queue_name,)
+                )
+                return self._cursor.fetchall()
+                
+            except sqlite3.Error as e:
+                logger.error(f"Failed to get completed files for {self.queue_name}: {e}")
+                raise
+                
+    def purge_completed(self):
+        """Remove all completed files from the queue."""
+        with self._lock:
+            try:
+                # Start transaction
+                self._cursor.execute("BEGIN IMMEDIATE")
+                
+                # Remove completed items for this queue
+                self._cursor.execute(
+                    """DELETE FROM queue_items 
+                       WHERE queue_name = ? AND status = 'completed'""",
+                    (self.queue_name,)
+                )
+                
+                # Commit transaction
+                self._conn.commit()
+                
+            except sqlite3.Error as e:
+                self._conn.rollback()
+                smartCommonLogger.error(f"Failed purge completed files from {self.queue_name}: {e}")
+                raise
+                
+    def add_failed(self, host, hostpath, reason='', filesize=0):
+        """A file as failed."""
+        with self._lock:
+            item = (host, hostpath, host, reason, filesize, 0, time.time(), 'failed')
+            
+            try:
+                # Start transaction
+                self._cursor.execute("BEGIN IMMEDIATE")
+                
+                # Insert with queue name
+                
+                self._cursor.execute(
+                    """INSERT INTO queue_items (queue_name, host, hostpath, dest, destpath, command_id, retry, last_try, status) 
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (self.queue_name, *item)
+                )
+                
+                # Commit transaction
+                self._conn.commit()
+                
+            except sqlite3.Error as e:
+                self._conn.rollback()
+                smartCommonLogger.error(f"Failed to add failed file to {self.queue_name}: {e}")
+                raise
+                
+    def get_failed(self):
+        """Return a list of failed files as a four-element tuples containing
+         host, host path, failure reason, and file size."""
+         with self._lock:
+             try:
+                self._cursor.execute(
+                    """SELECT host, hostpath, destpath, filesize
+                       FROM queue_items
+                       WHERE queue_name = ? AND status = 'failed'
+                       ORDER BY hostpath""",
+                    (self.queue_name,)
+                )
+                return self._cursor.fetchall()
+                
+            except sqlite3.Error as e:
+                logger.error(f"Failed to get failed files for {self.queue_name}: {e}")
+                raise
+                
+    def purge_failed(self):
+        """Remove all failed files from the queue."""
+        with self._lock:
+            try:
+                # Start transaction
+                self._cursor.execute("BEGIN IMMEDIATE")
+                
+                # Remove completed items for this queue
+                self._cursor.execute(
+                    """DELETE FROM queue_items 
+                       WHERE queue_name = ? AND status = 'failed'""",
+                    (self.queue_name,)
+                )
+                
+                # Commit transaction
+                self._conn.commit()
+                
+            except sqlite3.Error as e:
+                self._conn.rollback()
+                smartCommonLogger.error(f"Failed to purge failed files from {self.queue_name}: {e}")
+                raise
+                
     def get_queue_stats(self):
         """Get statistics about this queue."""
         with self._lock:
@@ -318,6 +450,7 @@ class DiskBackedQueue(queue.Queue):
                 stats = {
                     'pending': 0,
                     'processing': 0,
+                    'completed': 0,
                     'failed': 0
                 }
                 

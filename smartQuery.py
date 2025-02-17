@@ -168,10 +168,11 @@ def main(args):
 if __name__ == "__main__":
     def mib(value):
         _queryRE = re.compile(r'(?P<name>[A-Z_]+)(?P<number>\d+)')
-        _valid_names = ['OBSSTATUS_DR', 'QUEUE_SIZE_DR', 'QUEUE_STATUS_DR',
-                        'QUEUE_ENTRY_', 'ACTIVE_ID_DR', 'ACTIVE_STATUS_DR',
-                        'ACTIVE_BYTES_DR', 'ACTIVE_PROGRESS_DR', 
-                        'ACTIVE_SPEED_DR', 'ACTIVE_REMAINING_DR']
+        _valid_names = ['OBSSTATUS_DR', 'QUEUE_SIZE_DR', 'QUEUE_STATS_DR',
+                        'QUEUE_STATUS_DR', 'QUEUE_ENTRY_', 'ACTIVE_ID_DR',
+                        'ACTIVE_STATUS_DR', 'ACTIVE_BYTES_DR',
+                        'ACTIVE_PROGRESS_DR', 'ACTIVE_SPEED_DR',
+                        'ACTIVE_REMAINING_DR']
         mtch = _queryRE.match(value)
         if mtch is None:
             _valid_names = ['SUMMARY', 'INFO', 'LASTLOG', 'SUBSYSTEM',

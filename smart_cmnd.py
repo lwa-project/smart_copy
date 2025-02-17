@@ -132,7 +132,14 @@ class MCSCommunicate(Communicate):
                         else:
                             packed_data = self.SubSystemInstance.currentState['lastLog']
                             
-                    elif prop == 'STATUS':
+                    elif prop == 'STATS':
+                        status, packed_data = self.SubSystemInstance.getDRQueueStats(value)
+                        if status:
+                            packed_data = str(packed_data)
+                        else:
+                            packed_data = self.SubSystemInstance.currentState['lastLog']
+                            
+                    if prop == 'STATUS':
                         status, packed_data = self.SubSystemInstance.getDRQueueState(value)
                         if status:
                             packed_data = str(packed_data)
