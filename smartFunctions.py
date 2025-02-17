@@ -379,7 +379,7 @@ class SmartCopy(object):
                 self.currentState['lastLog'] = 'QUEUE: unknown data recorder %s' % dr
                 return False, 0
                 
-    def getDRQueueStats(self):
+    def getDRQueueStats(self, dr):
         """
         Return the queue status (pending, processing, completed, failed) of the
         specified data recorder.  Return a two-element tuple of (success, value)
