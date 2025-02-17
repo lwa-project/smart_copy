@@ -280,7 +280,7 @@ class ManageDR(object):
         
         # Results cache
         self.results = LimitedSizeDict(size_limit=512)
-        for entry in self.queue.restored:
+        for entry in self.queue.restored_items:
             host, hostpath, dest, destpath, id, retries, lasttry = entry
             self.results[id] = 'queued for %s:%s -> %s:%s' % (host, hostpath, dest, destpath)
             
