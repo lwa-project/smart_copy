@@ -316,7 +316,7 @@ class DiskBackedQueue(Queue.Queue):
     def add_completed(self, host, hostpath, filesize=0):
         """A file as successfully completed."""
         with self._lock:
-            item = (host, hostpath, host, hostpath, filesize, 0, time.time(), 'completed')
+            item = (host, hostpath, host, hostpath, filesize, -1, 0, time.time(), 'completed')
             
             try:
                 # Start transaction
@@ -325,8 +325,8 @@ class DiskBackedQueue(Queue.Queue):
                 # Insert with queue name
                 
                 self._cursor.execute(
-                    """INSERT INTO queue_items (queue_name, host, hostpath, dest, destpath, command_id, retry_count, last_try, status) 
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    """INSERT INTO queue_items (queue_name, host, hostpath, dest, destpath, filesize, command_id, retry_count, last_try, status) 
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (self.queue_name, *item)
                 )
                 
@@ -381,7 +381,7 @@ class DiskBackedQueue(Queue.Queue):
     def add_failed(self, host, hostpath, reason='', filesize=0):
         """A file as failed."""
         with self._lock:
-            item = (host, hostpath, host, reason, filesize, 0, time.time(), 'failed')
+            item = (host, hostpath, host, reason, filesize, 0, -2, time.time(), 'failed')
             
             try:
                 # Start transaction
@@ -390,8 +390,8 @@ class DiskBackedQueue(Queue.Queue):
                 # Insert with queue name
                 
                 self._cursor.execute(
-                    """INSERT INTO queue_items (queue_name, host, hostpath, dest, destpath, command_id, retry_count, last_try, status) 
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    """INSERT INTO queue_items (queue_name, host, hostpath, dest, destpath, filesize, command_id, retry_count, last_try, status) 
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (self.queue_name, *item)
                 )
                 
