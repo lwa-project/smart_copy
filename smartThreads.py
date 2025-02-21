@@ -407,7 +407,7 @@ class ManageDR(object):
                                 with ell:
                                     self.queue.add_failed(self.active.host,
                                                           self.active.hostpath,
-                                                          self.getStats(),
+                                                          self.active.stderr,
                                                           fsize)
                                     
                             else:
