@@ -641,9 +641,8 @@ class ManageDR(object):
             smartThreadsLogger.info("Attempting to purge %.1f TB from %s", totalSize/1024.0**4, self.dr)
             
             ### Purge the files, keeping track of what we can't do and what has failed
-            entries = lines.split('\n')[:-1]
             retry, failed = [], []
-            for item in completed:
+            for entry in completed:
                 host, filename, fsize = entry
                 try:
                     assert(not self.inhibit)
