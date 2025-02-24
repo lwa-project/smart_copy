@@ -158,10 +158,12 @@ def main(args):
                 for line in info:
                     print("  %s" % line)
                     
-        sockIn.close()
-        sockOut.close()
     except socket.error as e:
         raise RuntimeError(str(e))
+        
+    finally:
+        sockIn.close()
+        sockOut.close()
         
     sockRef.close()
     context.term()
