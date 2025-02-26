@@ -703,7 +703,7 @@ class ManageDR(object):
             ### The report
             msg = MIMEText(report)
             msg['Subject'] = 'Recent SmartCopy Failures  for %s - %s' % (self.dr, datetime.utcnow().strftime("%Y/%m/%d"),)
-            msg['From'] = self.FROM
+            msg['From'] = self.config['email']['username']
             msg['To'] = ','.join(to)
             if cc is not None:
                 cc = list(set(cc))
@@ -718,10 +718,10 @@ class ManageDR(object):
                 
             ## Send it off
             try:
-                server = smtplib.SMTP(self.ESRV, 587)
+                server = smtplib.SMTP(self.config['email']['smtp_server'], 587)
                 server.starttls()
-                server.login(self.FROM, self.PASS)
-                server.sendmail(self.FROM, rcpt, msg.as_string())
+                server.login(self.config['email']['username'], self.config['email']['password'])
+                server.sendmail(self.config['email']['username'], rcpt, msg.as_string())
                 server.close()
             except Exception as e:
                 smartThreadsLogger.error("Could not send error report e-mail: %s", str(e))
