@@ -683,7 +683,7 @@ class ManageDR(object):
         report = ''
         for entry in failed:
             host, hostpath, reason, fsize = entry
-            report += f"  {hostpath} ({fsize} B) with {reason if reason else 'unknown'}\n"
+            report += f" * {hostpath} ({fsize} B) with {reason if reason else 'unknown'}\n"
             
         # Send the report as an email, if there is anything to send
         if len(report) > 0:
@@ -702,7 +702,7 @@ class ManageDR(object):
             
             ### The report
             msg = MIMEText(report)
-            msg['Subject'] = 'Recent SmartCopy Failures  for %s - %s' % (self.dr, datetime.utcnow().strftime("%Y/%m/%d"),)
+            msg['Subject'] = '%s - Recent SmartCopy Failures for %s - %s' % (SITE.upper(), self.dr, datetime.utcnow().strftime("%Y/%m/%d"),)
             msg['From'] = self.config['email']['username']
             msg['To'] = ','.join(to)
             if cc is not None:
@@ -725,3 +725,5 @@ class ManageDR(object):
                 server.close()
             except Exception as e:
                 smartThreadsLogger.error("Could not send error report e-mail: %s", str(e))
+                
+            self.queue.purge_failed()
