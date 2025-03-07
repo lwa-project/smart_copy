@@ -880,7 +880,7 @@ class InterruptibleCopy(object):
                         break
                 else:
                     break
-             while watchErr.poll(1):
+            while watchErr.poll(1):
                 if self.process.poll() is None:
                     try:
                         new_text = self.process.stderr.read(1)
