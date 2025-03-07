@@ -860,13 +860,16 @@ class InterruptibleCopy(object):
         self.process = subprocess.Popen(cmd, bufsize=1, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
         watchOut = select.poll()
         watchOut.register(self.process.stdout)
+        watchErr = select.poll()
+        watchErr.register(self.process.stderr)
         smartCommonLogger.debug('Launched \'%s\' with PID %i', ' '.join(cmd), self.process.pid)
         
         # Read from stdout while the copy is running so we can get 
         # an idea of what is going on with the progress
+        self.stderr = ''
         while True:
             ## Is there something to read?
-            stdout = ''
+            stdout, stderr = '', ''
             while watchOut.poll(1):
                 if self.process.poll() is None:
                     try:
@@ -877,12 +880,23 @@ class InterruptibleCopy(object):
                         break
                 else:
                     break
-                    
+             while watchErr.poll(1):
+                if self.process.poll() is None:
+                    try:
+                        new_text = self.process.stderr.read(1)
+                        new_text = new_text.decode()
+                        stderr += new_text
+                    except ValueError:
+                        break
+                else:
+                    break
+                
             ## Did we read something?  If not, sleep
-            if stdout == '':
+            if stdout == '' and stderr == '':
                 time.sleep(1)
             else:
                 self.stdout = stdout.rstrip()
+                self.stderr += stderr.rstrip()
                 
             ## Are we done?
             self.process.poll()
@@ -891,7 +905,9 @@ class InterruptibleCopy(object):
                 break
                 
         # Pull out anything that might be stuck in the buffers
-        self.stdout, self.stderr = self.process.communicate()
+        stdout, stderr = self.process.communicate()
+        self.stdout = stdout.decode()
+        self.stderr += stderr.decode()
         
         smartCommonLogger.debug('PID %i exited with code %i', self.process.pid, self.process.returncode)
         
@@ -900,8 +916,8 @@ class InterruptibleCopy(object):
         elif self.process.returncode < 0:
             self.status = 'paused'
         else:
-            smartCommonLogger.debug('copy failed -> %s', self.stderr.decode().rstrip())
-            self.status = 'error: %s' % self.stderr.decode()
+            smartCommonLogger.debug('copy failed -> %s', self.stderr.rstrip())
+            self.status = 'error: %s' % self.stderr
             
         return self.process.returncode
         
@@ -933,13 +949,16 @@ class InterruptibleCopy(object):
         self.process = subprocess.Popen(cmd, bufsize=1, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
         watchOut = select.poll()
         watchOut.register(self.process.stdout)
+        watchErr = select.poll()
+        watchErr.register(self.process.stderr)
         smartCommonLogger.debug('Launched \'%s\' with PID %i', ' '.join(cmd), self.process.pid)
         
         # Read from stdout while the copy is running so we can get 
         # an idea of what is going on with the progress
+        self.stderr = ''
         while True:
             ## Is there something to read?
-            stdout = ''
+            stdout, stderr = '', ''
             while watchOut.poll(1):
                 if self.process.poll() is None:
                     try:
@@ -950,12 +969,23 @@ class InterruptibleCopy(object):
                         break
                 else:
                     break
+            while watchErr.poll(1):
+                if self.process.poll() is None:
+                    try:
+                        new_text = self.process.stderr.read(1)
+                        new_text = new_text.decode()
+                        stderr += new_text
+                    except ValueError:
+                        break
+                else:
+                    break
                     
             ## Did we read something?  If not, sleep
-            if stdout == '':
+            if stdout == '' and stderr == '':
                 time.sleep(1)
             else:
                 self.stdout = stdout.rstrip()
+                self.stderr += stderr.rstrip()
                 
             ## Are we done?
             self.process.poll()
@@ -964,7 +994,9 @@ class InterruptibleCopy(object):
                 break
                 
         # Pull out anything that might be stuck in the buffers
-        self.stdout, self.stderr = self.process.communicate()
+        stdout, stderr = self.process.communicate()
+        self.stdout = stdout.decode()
+        self.stderr += stderr.decode()
         
         smartCommonLogger.debug('PID %i exited with code %i', self.process.pid, self.process.returncode)
         
@@ -974,6 +1006,6 @@ class InterruptibleCopy(object):
             self.status = 'paused'
         else:
             smartCommonLogger.debug('delete failed -> %s', self.stderr.rstrip())
-            self.status = 'error: %s' % self.stderr.decode()
+            self.status = 'error: %s' % self.stderr
             
         return self.process.returncode
