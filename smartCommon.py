@@ -916,8 +916,17 @@ class InterruptibleCopy(object):
         elif self.process.returncode < 0:
             self.status = 'paused'
         else:
-            smartCommonLogger.debug('copy failed -> %s', self.stderr.rstrip())
-            self.status = 'error: %s' % self.stderr
+            rsync_errors = []
+            for line in self.stdout.split('\n'):
+                if line.find('failed') != -1 or line.find('error') != -1:
+                    rsync_errors.append(line)
+                    
+            if rsync_errors:
+                error_message = '\n'.join(rsync_errors)
+                self.stderr = error_message + '\n' + self.stderr
+                
+            smartCommonLogger.debug('copy failed -> %s', self.stderr.strip())
+            self.status = 'error: %s' % self.stderr.strip()
             
         return self.process.returncode
         
