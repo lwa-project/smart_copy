@@ -20,6 +20,7 @@ except ImportError:
 import traceback
 from io import StringIO
 from collections import deque
+import netifaces
 
 from lwa_auth.tools import load_json_config
 
@@ -39,6 +40,23 @@ SITE = socket.gethostname().split('-', 1)[0]
 # Default Configuration File
 #
 DEFAULTS_FILENAME = '/lwa/software/defaults.json'
+
+
+def getServerAddress():
+    """
+    Return the IP address of the smart copy server by looking for an interface
+    on a 10.1.x.0 network.
+    """
+    
+    for interface in netifaces.interfaces():
+        addrs = netifaces.ifaddresses(interface)
+        if netifaces.AF_INET in addrs:
+            for addr in addrs[netifaces.AF_INET]:
+                ip = addr['addr']
+                if ip.startswith('10.1.'):
+                    network = '.'.join(ip.split('.')[:3])
+                    return f"{network}.2"
+    raise RuntimeError("Could not find 10.1.x.0 network interface")
 
 
 class MCSCommunicate(Communicate):
@@ -127,6 +145,13 @@ class MCSCommunicate(Communicate):
                     
                     if prop == 'SIZE':
                         status, packed_data = self.SubSystemInstance.getDRQueueSize(value)
+                        if status:
+                            packed_data = str(packed_data)
+                        else:
+                            packed_data = self.SubSystemInstance.currentState['lastLog']
+                            
+                    elif prop == 'STATS':
+                        status, packed_data = self.SubSystemInstance.getDRQueueStats(value)
                         if status:
                             packed_data = str(packed_data)
                         else:
@@ -398,35 +423,9 @@ def main(args):
     config = load_json_config(args.config)
     
     # Set the site-dependant `message_out_host` IP address
-    if SITE == 'lwa1':
-        message_out_host = "10.1.1.2"
-    elif SITE == 'lwasv':
-        message_out_host = "10.1.2.2"
-    elif SITE == 'lwana':
-        message_out_host = "10.1.3.2"
+    config['mcs']['message_out_host'] = getServerAddress()
     nametag = SITE.replace('lwa', '').lower()
     
-    # Update the configuration and zeroconf
-    config['mcs']['message_out_host'] = message_out_host
-    try:
-        from zeroconf import Zeroconf, ServiceInfo
-        
-        zeroconf = Zeroconf()
-        
-        zconfig = {}
-        for key in config['mcs']:
-            zconfig[key] = str(config['mcs'][key])
-        
-        zinfo = ServiceInfo("_sccs%s._udp.local." % nametag, "Smart copy server._sccs%s._udp.local." % nametag, 
-                            port=config['mcs']['message_in_port'], weight=0, priority=0, 
-                            properties=zconfig, server="%s.local." % socket.gethostname(),
-                            addresses=[socket.inet_aton(config['mcs']['message_out_host']),])
-                    
-        zeroconf.register_service(zinfo)
-        
-    except ImportError:
-        logger.warning('Could not launch zeroconf service info')
-        
     # Setup SmartCopy control
     lwaSC = SmartCopy(config)
     
@@ -500,13 +499,6 @@ def main(args):
     refServer.stop()
     mcsComms.stop()
     
-    # Close down zeroconf
-    try:
-        zeroconf.unregister_service(zinfo)
-        zeroconf.close()
-    except NameError:
-        pass
-        
     # Exit
     logger.info('Finished')
     logging.shutdown()
@@ -526,4 +518,3 @@ if __name__ == "__main__":
                         help='print debug messages as well as info and higher')
     args = parser.parse_args()
     main(args)
-    
