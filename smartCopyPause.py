@@ -115,7 +115,7 @@ def main(args):
     refPort = 5052
     
     cmds = []
-    nDR = 5 if SITE == 'lwa1' else 4
+    nDR = 5
     for i in range(1, nDR+1):
         dr = 'DR%i' % i
         if args.all or dr in args.DR:

@@ -112,7 +112,7 @@ class SmartCopy(object):
         else:
             self.currentState['drThreads'] = {}
             self.globalInhibit = {}
-            drs = (1,2,3,4,5) if self.site == 'lwa1' else (1,2,3,4)
+            drs = (1,2,3,4,5)
             for i in drs:
                 dr = 'DR%i' % i
                 self.currentState['drThreads'][dr] = ManageDR(dr, self.config, SCCallbackInstance=self)
