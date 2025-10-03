@@ -10,7 +10,7 @@ import socket
 import argparse
 from datetime import datetime
 
-from zeroconf import Zeroconf
+import netifaces
 
 #
 # Site Name
@@ -20,6 +20,23 @@ SITE = socket.gethostname().split('-', 1)[0]
 
 # Maximum number of bytes to receive from MCS
 MCS_RCV_BYTES = 16*1024
+
+
+def getServerAddress():
+    """
+    Return the IP address of the smart copy server by looking for an interface
+    on a 10.1.x.0 network.
+    """
+    
+    for interface in netifaces.interfaces():
+        addrs = netifaces.ifaddresses(interface)
+        if netifaces.AF_INET in addrs:
+            for addr in addrs[netifaces.AF_INET]:
+                ip = addr['addr']
+                if ip.startswith('10.1.'):
+                    network = '.'.join(ip.split('.')[:3])
+                    return f"{network}.2"
+    raise RuntimeError("Could not find 10.1.x.0 network interface")
 
 
 def getTime():
@@ -93,32 +110,9 @@ def parsePayload(payload):
 
 
 def main(args):
-    # Connect to the smart copy command server
-    tPoll = time.time()
-    nametag = SITE.replace('lwa', '').lower()
-    zinfo = None
-    while time.time() - tPoll <= 10.0:
-        zeroconf = Zeroconf()
-        zinfo = zeroconf.get_service_info("_sccs%s._udp.local." % nametag, "Smart copy server._sccs%s._udp.local." % nametag)
-        
-        if zinfo is not None:
-            if 'message_out_port' not in zinfo.properties \
-               and b'message_out_port' not in zinfo.properties:
-                zinfo = None
-                
-        if zinfo is not None:
-            break
-            
-        zeroconf.close()
-        time.sleep(1)
-    if zinfo is None:
-        raise RuntimeError("Cannot find the smart copy command server")
-        
-    try:
-        outHost = socket.inet_ntoa(zinfo.addresses[0])
-    except AttributeError:
-        outHost = socket.inet_ntoa(zinfo.address)
-    outPort = zinfo.port
+    # Find the smart copy command server and set the in/out ports
+    outHost = getServerAddress()
+    outPort = 5050
     try:
         inHost = socket.gethostname().split('-')[1].upper()
     except IndexError:
@@ -126,13 +120,9 @@ def main(args):
     inHost = inHost[:3]
     while len(inHost) < 3:
         inHost += "_"
-    try:
-        inPort = int(zinfo.properties['message_out_port'], 10)
-        refPort = int(zinfo.properties['message_ref_port'], 10)
-    except KeyError:
-        inPort = int(zinfo.properties[b'message_out_port'], 10)
-        refPort = int(zinfo.properties[b'message_ref_port'], 10)
-        
+    inPort = 5051
+    refPort = 5052
+    
     context = zmq.Context()
     sockRef = context.socket(zmq.REQ)
     sockRef.connect("tcp://%s:%i" % (outHost, refPort))
@@ -168,25 +158,25 @@ def main(args):
                 for line in info:
                     print("  %s" % line)
                     
-        sockIn.close()
-        sockOut.close()
     except socket.error as e:
         raise RuntimeError(str(e))
         
+    finally:
+        sockIn.close()
+        sockOut.close()
+        
     sockRef.close()
     context.term()
-    
-    zeroconf.close()
-    time.sleep(0.1)
 
 
 if __name__ == "__main__":
     def mib(value):
         _queryRE = re.compile(r'(?P<name>[A-Z_]+)(?P<number>\d+)')
-        _valid_names = ['OBSSTATUS_DR', 'QUEUE_SIZE_DR', 'QUEUE_STATUS_DR',
-                        'QUEUE_ENTRY_', 'ACTIVE_ID_DR', 'ACTIVE_STATUS_DR',
-                        'ACTIVE_BYTES_DR', 'ACTIVE_PROGRESS_DR', 
-                        'ACTIVE_SPEED_DR', 'ACTIVE_REMAINING_DR']
+        _valid_names = ['OBSSTATUS_DR', 'QUEUE_SIZE_DR', 'QUEUE_STATS_DR',
+                        'QUEUE_STATUS_DR', 'QUEUE_ENTRY_', 'ACTIVE_ID_DR',
+                        'ACTIVE_STATUS_DR', 'ACTIVE_BYTES_DR',
+                        'ACTIVE_PROGRESS_DR', 'ACTIVE_SPEED_DR',
+                        'ACTIVE_REMAINING_DR']
         mtch = _queryRE.match(value)
         if mtch is None:
             _valid_names = ['SUMMARY', 'INFO', 'LASTLOG', 'SUBSYSTEM',
@@ -209,4 +199,3 @@ if __name__ == "__main__":
                         help='display version information')
     args = parser.parse_args()
     main(args)
-    
