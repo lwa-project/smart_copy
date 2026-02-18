@@ -476,7 +476,7 @@ class DiskBackedQueue(Queue.Queue):
 class InterruptibleCopy(object):
     _rsyncRE = re.compile('.*?(?P<transferred>\d) +(?P<progress>\d{1,3}%) +(?P<speed>\d+\.\d+[ kMG]B/s) +(?P<remaining>.*)')
     
-    def __init__(self, host, hostpath, dest, destpath, id=None, tries=0, last_try=0.0, bw_limit=0.0):
+    def __init__(self, host, hostpath, dest, destpath, id=None, tries=0, last_try=0.0, bw_limit=0.0, wait_retry=24):
         # Copy setup
         self.host = host
         self.hostpath = hostpath
@@ -502,7 +502,7 @@ class InterruptibleCopy(object):
         self.status = ''
         
         # Start the copy or delete running
-        if time.time() - self.last_try > 86400.0:
+        if time.time() - self.last_try > wait_retry*3600:
             self.resume()
         else:
             self.status = 'error: too soon to retry'
@@ -937,7 +937,7 @@ class InterruptibleCopy(object):
         
         if self.host == '':
             # Locally originating delete
-            cmd = ["rm" "-f", self.hostpath]
+            cmd = ["rm", "-f", self.hostpath]
             
         else:
             # Remotely originating delete

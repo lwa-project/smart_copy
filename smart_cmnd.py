@@ -252,7 +252,7 @@ class MCSCommunicate(Communicate):
                     
             # SHT
             elif command == 'SHT':
-                status, exitCode = self.SubSystemInstance.sht(mode=data)
+                status, exitCode = self.SubSystemInstance.sht()
                 if status:
                     packed_data = ''
                 else:

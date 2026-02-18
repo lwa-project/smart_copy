@@ -466,7 +466,7 @@ class ManageDR(object):
                                         
                                 ### If we've made it this far we have a copy that is ready to go.  
                                 ### Start it up.
-                                self.active = InterruptibleCopy(*task, bw_limit=bw_limit)
+                                self.active = InterruptibleCopy(*task, bw_limit=bw_limit, wait_retry=self.config['wait_retry'])
                                 self.results[self.active.id] = 'active/started for %s:%s -> %s:%s' % (task[0], task[1], task[2], task[3])
                                 
                             else:
