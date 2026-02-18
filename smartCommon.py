@@ -13,6 +13,7 @@ import traceback
 import subprocess
 import logging
 import sqlite3
+import socket
 from io import StringIO
 from socket import gethostname
 
@@ -763,6 +764,32 @@ class InterruptibleCopy(object):
         
         return True
         
+    def _is_remote_destination(self):
+        """
+        Determine if the destination requires traversing a gateway by checking
+        the kernel routing table.  For locally originating copies the check runs
+        locally; for DR-originating copies the check runs on the DR via SSH.
+        Returns True if the destination appears to be behind a gateway.
+        """
+
+        try:
+            dest_ip = socket.getaddrinfo(self.dest, None)[0][4][0]
+        except (socket.gaierror, IndexError):
+            smartCommonLogger.warning('Cannot resolve destination %s, assuming remote', self.dest)
+            return True
+
+        try:
+            if self.host == '':
+                cmd = ['ip', 'route', 'get', dest_ip]
+            else:
+                cmd = ['ssh', '-t', '-t', 'mcsdr@%s' % self.host.lower(),
+                       'ip route get %s' % dest_ip]
+            output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=10, text=True)
+            return ' via ' in output
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+            smartCommonLogger.warning('Route check failed for %s: %s, assuming remote', self.dest, str(e))
+            return True
+
     def _getTruncateCommand(self):
         """
         Build up a subprocess-compatible command needed to truncate a file on 
@@ -819,6 +846,8 @@ class InterruptibleCopy(object):
                 # Remote destination
                 ## --append-verify should be ok here
                 cmd[cmd.index('--append')] = '--append-verify'
+                if self.bw_limit > 0 and self._is_remote_destination():
+                    cmd.insert(-1, "--bwlimit=%.2fm" % self.bw_limit)
                 cmd.append( "%s:%s" % (self.dest, self.destpath) )
                 
         else:
@@ -832,7 +861,7 @@ class InterruptibleCopy(object):
                 # Source and destination are on different machines
                 ## --append-verify should be ok here
                 rcmd = "rsync -avH --append-verify --partial --progress"
-                if self.bw_limit > 0:
+                if self.bw_limit > 0 and self._is_remote_destination():
                     rcmd += (" --bwlimit=%.2fm" % self.bw_limit)
                 cmd.append( 'shopt -s huponexit && %s %s %s:%s' % (rcmd, self.hostpath, self.dest, self.destpath) )
                 
