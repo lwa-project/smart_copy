@@ -31,10 +31,6 @@ DELETE_MARKER_QUEUE = 'smartcopy_queue_delete_this_file'
 DELETE_MARKER_NOW   = 'smartcopy_now_delete_this_file'
 
 
-IS_UNRELIABLE_LINK = False
-if gethostname().split('-', 1)[0] in ('lwasv',):
-    IS_UNRELIABLE_LINK = True
-
 
 class SerialNumber(object):
     """
@@ -792,14 +788,11 @@ class InterruptibleCopy(object):
 
     def _getTruncateCommand(self):
         """
-        Build up a subprocess-compatible command needed to truncate a file on 
-        unreliable links.  This returns None if no truncate command is needed.
+        Build up a subprocess-compatible command needed to truncate the
+        destination file before resuming a copy.  This returns None if no
+        truncate command is needed.
         """
         
-        if not IS_UNRELIABLE_LINK:
-            # Ignore reliable links
-            cmd = None
-            
         if self.host == '':
             # Locally originating copy
             cmd = ['bash', '-c', "if test -e %s; then truncate -c -s -512K %%s; fi" % self.hostpath]
@@ -875,7 +868,7 @@ class InterruptibleCopy(object):
         # Get the command to use
         cmd = self._getCopyCommand()
         
-        # Deal with unreliable links when copying data
+        # Truncate the destination file before resuming to avoid corruption
         trunc = self._getTruncateCommand()
         if trunc is not None:
             try:
