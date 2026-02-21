@@ -1,0 +1,342 @@
+% 03-monitor-control.tex - Monitor and Control Interface
+
+\chapter{Monitor and Control Interface}
+\label{sec:monitor-control}
+
+This section defines the command interface for \SC{}, including the UDP packet protocol, system commands, data management commands, and MIB entries.
+
+\begin{noteBox}
+\SC{} uses a UDP packet format based on the \MCS{} standard and shares the same network infrastructure as other LWA subsystems, but operates independently. Like HAL, \MCS{} does not see or route \SC{} messages, and \SC{} cannot see \MCS{} or subsystem messages. However, unlike HAL, \SC{} packets are not cryptographically signed.
+\end{noteBox}
+
+\section{UDP Command Protocol}
+
+\SC{} uses UDP packets for its command interface, following a packet format based on the \MCS{} standard.
+
+\subsection{Network Configuration}
+
+The default network port assignments are listed in Table~\ref{tab:network-ports}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Default Network Ports}
+    \label{tab:network-ports}
+    \begin{tabular}{lcl}
+        \toprule
+        \textbf{Port} & \textbf{Default} & \textbf{Description} \\
+        \midrule
+        Receive Port & 5050 & Incoming commands to \SC{} \\
+        Send Port & 5051 & Outgoing responses from \SC{} \\
+        Reference Port & 5052 & \O{}MQ REP socket for reference IDs \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Port assignments are configurable via the \file{defaults.json} configuration file using the \code{mcs.message\_in\_port}, \code{mcs.message\_out\_port}, and \code{mcs.message\_ref\_port} parameters.
+
+The server bind address is automatically determined by scanning network interfaces for a \code{10.1.x.0} network. The bind address is set to \code{10.1.x.2} on the matching subnet.
+
+\subsection{Packet Structure}
+
+Command packets use the following structure, based on the \MCS{} packet format (Table~\ref{tab:packet-structure}).
+
+\begin{table}[htbp]
+    \centering
+    \caption{Command Packet Structure}
+    \label{tab:packet-structure}
+    \begin{tabular}{cclp{5.5cm}}
+        \toprule
+        \textbf{Bytes} & \textbf{Length} & \textbf{Field} & \textbf{Description} \\
+        \midrule
+        0--2 & 3 & Destination & Subsystem identifier (``SCM'') \\
+        3--5 & 3 & Sender & Source subsystem identifier \\
+        6--8 & 3 & Command & Three-letter command code \\
+        9--17 & 9 & Reference & Reference number (zero-padded integer) \\
+        18--21 & 4 & Data Length & Length of data section \\
+        22--27 & 6 & MJD & Modified Julian Date \\
+        28--36 & 9 & MPM & Milliseconds Past Midnight \\
+        37 & 1 & - & Space \\
+        38+ & Variable & Data & Command-specific data payload \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Response Format}
+
+Response packets follow a similar structure (Table~\ref{tab:response-structure}).
+
+\begin{table}[htbp]
+    \centering
+    \caption{Response Packet Structure}
+    \label{tab:response-structure}
+    \begin{tabular}{cclp{5.5cm}}
+        \toprule
+        \textbf{Bytes} & \textbf{Length} & \textbf{Field} & \textbf{Description} \\
+        \midrule
+        0--2 & 3 & Destination & Original sender \\
+        3--5 & 3 & Sender & ``SCM'' \\
+        6--8 & 3 & Command & Echoed from request \\
+        9--17 & 9 & Reference & Echoed from request \\
+        18--21 & 4 & Data Length & Response data length + 8 \\
+        22--27 & 6 & MJD & Current timestamp \\
+        28--36 & 9 & MPM & Current timestamp \\
+        37 & 1 & - & Space \\
+        38 & 1 & Response Code & \code{A} = Accepted, \code{R} = Rejected \\
+        39--45 & 7 & Status & System status string \\
+        46+ & Variable & Data & Response data \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Reference ID Server}
+
+\SC{} provides a \O{}MQ REP socket on the reference port (default: 5052) for generating unique reference IDs. Clients send the message \code{next\_ref} and receive a unique integer in response. Reference IDs:
+
+\begin{itemize}
+    \item Range from 1 to 999,999,999
+    \item Roll over to 1 when the maximum is reached
+    \item Are persisted to the file \file{.sc\_reference\_id} every 10 IDs
+    \item Resume from the persisted value (plus 10) after a restart
+\end{itemize}
+
+\section{System Commands}
+
+The system commands are listed in Table~\ref{tab:system-commands}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{System Commands}
+    \label{tab:system-commands}
+    \begin{tabular}{lp{6cm}p{4cm}}
+        \toprule
+        \textbf{Command} & \textbf{Description} & \textbf{Parameters} \\
+        \midrule
+        \cmd{PNG} & Ping/heartbeat verification & None \\
+        \cmd{INI} & Initialize \SC{} system & None \\
+        \cmd{SHT} & Shutdown \SC{} system & None \\
+        \cmd{RPT} & Report MIB entry value & MIB key string \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{PNG --- Ping}
+
+The \cmd{PNG} command verifies system responsiveness. No parameters are required. Returns an accepted response if the system is operational.
+
+\subsection{INI --- Initialize}
+
+The \cmd{INI} command initializes the \SC{} system:
+\begin{itemize}
+    \item Transitions system state to \status{BOOTING}
+    \item Creates or restarts the station monitoring thread
+    \item Creates or restarts the per-\DR{} queue manager threads (DR1--DR5)
+    \item Restores pending queue items from the SQLite database
+    \item Clears the global inhibit flag for all \DR{} copy queues
+    \item Transitions system state to \status{NORMAL} upon completion
+\end{itemize}
+
+The initialization process runs asynchronously. The command is rejected with exit code \hex{03} if another \cmd{INI} or \cmd{SHT} operation is already in progress.
+
+\subsection{SHT --- Shutdown}
+
+The \cmd{SHT} command shuts down the \SC{} system:
+\begin{itemize}
+    \item Transitions system state to \status{SHUTDWN} immediately
+    \item Pauses all \DR{} copy queues
+    \item Stops all \DR{} queue manager threads
+    \item Stops the station monitoring thread
+\end{itemize}
+
+The shutdown process runs asynchronously. The command is rejected with exit code \hex{03} if another \cmd{INI} or \cmd{SHT} operation is already in progress. Pending queue items are preserved in the SQLite database and will be restored on the next \cmd{INI}.
+
+\subsection{RPT --- Report}
+
+The \cmd{RPT} command queries MIB entries. The data field contains the MIB key string to query. See Section~\ref{sec:mib-entries} for the full list of queryable entries.
+
+\section{Data Management Commands}
+
+The data management commands are listed in Table~\ref{tab:data-commands}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Data Management Commands}
+    \label{tab:data-commands}
+    \begin{tabular}{lp{5cm}p{5cm}}
+        \toprule
+        \textbf{Command} & \textbf{Description} & \textbf{Parameters} \\
+        \midrule
+        \cmd{SCP} & Queue a file copy & \code{host:path->dest:path} \\
+        \cmd{SRM} & Queue a file delete & \code{[-tNOW] host:path} \\
+        \cmd{PAU} & Pause a \DR{} queue & \code{DR\{1-5\}} or \code{ALL} \\
+        \cmd{RES} & Resume a \DR{} queue & \code{DR\{1-5\}} or \code{ALL} \\
+        \cmd{SCN} & Cancel a queued copy & Copy ID string \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{SCP --- Smart Copy}
+
+The \cmd{SCP} command queues a file copy operation. The data field contains the source and destination in the format:
+
+\begin{lstlisting}
+host:path->dest:path
+\end{lstlisting}
+
+Where \param{host} is the source hostname (or \DR{} name), \param{path} is the full source file path, \param{dest} is the destination hostname, and the second \param{path} is the destination path. Colons in file paths must be escaped with a backslash.
+
+On success, the response data contains the assigned copy ID. The \DR{} is determined from the \param{host} field. The command is rejected with:
+\begin{itemize}
+    \item \hex{04} if the system is not initialized
+    \item \hex{01} if the \DR{} name is not recognized
+    \item \hex{02} if an error occurs while queuing the copy
+\end{itemize}
+
+\subsection{SRM --- Smart Remove}
+
+The \cmd{SRM} command queues a file delete operation. The data field format is:
+
+\begin{lstlisting}
+[-tNOW] host:path
+\end{lstlisting}
+
+Where \param{host} is the hostname and \param{path} is the file to delete. The optional \code{-tNOW} flag causes the deletion to be executed immediately rather than deferred to the next purge cycle. Without \code{-tNOW}, the file is marked for deletion but only removed during the daily purge.
+
+On success, the response data contains the assigned delete ID. The command is rejected with:
+\begin{itemize}
+    \item \hex{04} if the system is not initialized
+    \item \hex{01} if the \DR{} name is not recognized
+    \item \hex{02} if an error occurs while queuing the delete
+\end{itemize}
+
+\subsection{PAU --- Pause}
+
+The \cmd{PAU} command pauses copy queue processing for a specified \DR{}. The data field contains either a specific \DR{} name (e.g., \code{DR1}) or \code{ALL} to pause all queues. When paused:
+
+\begin{itemize}
+    \item The currently active copy is interrupted (the \code{rsync} process is killed)
+    \item No new items are pulled from the queue
+    \item The global inhibit flag is set, preventing the station monitor from auto-resuming the queue
+\end{itemize}
+
+The command is rejected with:
+\begin{itemize}
+    \item \hex{04} if the system is not initialized
+    \item \hex{01} if the \DR{} name is not recognized
+    \item \hex{02} if an error occurs while pausing the queue
+\end{itemize}
+
+\subsection{RES --- Resume}
+
+The \cmd{RES} command resumes copy queue processing for a specified \DR{}. The data field contains either a specific \DR{} name or \code{ALL}. When resumed:
+
+\begin{itemize}
+    \item The currently paused copy is restarted (using \code{rsync --append} for seamless continuation)
+    \item Queue processing resumes from where it was paused
+    \item The global inhibit flag is cleared, allowing the station monitor to manage the queue
+\end{itemize}
+
+The command is rejected with:
+\begin{itemize}
+    \item \hex{04} if the system is not initialized
+    \item \hex{01} if the \DR{} name is not recognized
+    \item \hex{02} if an error occurs while resuming the queue
+\end{itemize}
+
+\subsection{SCN --- Smart Cancel}
+
+The \cmd{SCN} command cancels a previously queued copy or delete operation. The data field contains the copy ID string returned by the \cmd{SCP} or \cmd{SRM} command. If the specified copy is currently active, it is stopped. The item is marked as canceled in the results cache and will be skipped when encountered in the queue.
+
+The command is rejected with:
+\begin{itemize}
+    \item \hex{04} if the system is not initialized
+    \item \hex{01} if the copy ID is not found
+    \item \hex{02} if an internal error occurs
+\end{itemize}
+
+\section{MIB Entries}
+\label{sec:mib-entries}
+
+The MIB entries listed in Table~\ref{tab:mib-entries} are queryable via the \cmd{RPT} command. All MIB values are returned as ASCII text strings.
+
+\begin{table}[htbp]
+    \centering
+    \caption{General MIB Entries}
+    \label{tab:mib-entries}
+    \begin{tabular}{lp{8cm}}
+        \toprule
+        \textbf{Entry} & \textbf{Description} \\
+        \midrule
+        \mibentry{SUMMARY} & Current system status (7-character string) \\
+        \mibentry{INFO} & Informational message (up to 256 characters) \\
+        \mibentry{LASTLOG} & Last log entry (up to 256 characters) \\
+        \mibentry{SUBSYSTEM} & Subsystem identifier (``SCM'') \\
+        \mibentry{SERIALNO} & Serial number \\
+        \mibentry{VERSION} & Software version string \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Per-DR Observing Status}
+
+The observing status of each \DR{} is available via entries of the form \mibentry{OBSSTATUS\_\{DR\}} (Table~\ref{tab:obsstatus-mib}).
+
+\begin{table}[htbp]
+    \centering
+    \caption{Observing Status MIB Entry}
+    \label{tab:obsstatus-mib}
+    \begin{tabular}{lp{8cm}}
+        \toprule
+        \textbf{Entry} & \textbf{Description} \\
+        \midrule
+        \mibentry{OBSSTATUS\_DR\{n\}} & Recording state of \DR{}\{n\} (``busy'' or ``idle'') \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Example: \mibentry{OBSSTATUS\_DR3} returns the recording state of DR3.
+
+\subsection{Per-DR Queue Status}
+
+Queue information for each \DR{} is available via entries of the form \mibentry{QUEUE\_\{property\}\_\{DR\}} (Table~\ref{tab:queue-mib}).
+
+\begin{table}[htbp]
+    \centering
+    \caption{Queue MIB Entries}
+    \label{tab:queue-mib}
+    \begin{tabular}{lp{8cm}}
+        \toprule
+        \textbf{Entry} & \textbf{Description} \\
+        \midrule
+        \mibentry{QUEUE\_SIZE\_DR\{n\}} & Number of pending items in the queue (including active copy) \\
+        \mibentry{QUEUE\_STATUS\_DR\{n\}} & Queue state (``active'', ``paused'', or ``global paused'') \\
+        \mibentry{QUEUE\_STATS\_DR\{n\}} & Queue statistics: pending, processing, completed, and failed counts \\
+        \mibentry{QUEUE\_ENTRY\_\{id\}} & Status of a specific copy command by ID \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Example: \mibentry{QUEUE\_SIZE\_DR1} returns the number of items queued for DR1.
+
+\subsection{Per-DR Active Copy Status}
+
+Information about the currently active copy on each \DR{} is available via entries of the form \mibentry{ACTIVE\_\{property\}\_\{DR\}} (Table~\ref{tab:active-mib}).
+
+\begin{table}[htbp]
+    \centering
+    \caption{Active Copy MIB Entries}
+    \label{tab:active-mib}
+    \begin{tabular}{lp{8cm}}
+        \toprule
+        \textbf{Entry} & \textbf{Description} \\
+        \midrule
+        \mibentry{ACTIVE\_ID\_DR\{n\}} & Copy ID of the active transfer (``None'' if idle) \\
+        \mibentry{ACTIVE\_STATUS\_DR\{n\}} & Status string of the active transfer \\
+        \mibentry{ACTIVE\_BYTES\_DR\{n\}} & Bytes transferred by the active copy \\
+        \mibentry{ACTIVE\_PROGRESS\_DR\{n\}} & Percentage progress (e.g., ``42\%'') \\
+        \mibentry{ACTIVE\_SPEED\_DR\{n\}} & Current transfer speed (e.g., ``12.34MB/s'') or ``paused'' \\
+        \mibentry{ACTIVE\_REMAINING\_DR\{n\}} & Estimated time remaining (e.g., ``01:23:45'') or ``unknown'' \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Example: \mibentry{ACTIVE\_PROGRESS\_DR2} returns the percentage progress of the active copy on DR2.

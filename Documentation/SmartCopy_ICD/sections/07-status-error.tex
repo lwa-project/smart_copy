@@ -1,0 +1,122 @@
+% 07-status-error.tex - Status and Error Handling
+
+\chapter{Status and Error Handling}
+\label{sec:status-error}
+
+This section describes \SC{}'s system states, state transitions, and error reporting mechanisms.
+
+\section{System States}
+
+\SC{} reports its operational status via the \mibentry{SUMMARY} MIB entry as a 7-character string (Table~\ref{tab:system-states}).
+
+\begin{table}[htbp]
+    \centering
+    \caption{System Status Values}
+    \label{tab:system-states}
+    \begin{tabular}{lp{9cm}}
+        \toprule
+        \textbf{Status} & \textbf{Description} \\
+        \midrule
+        \status{BOOTING} & System is initializing (INI in progress) \\
+        \status{NORMAL } & System operating normally \\
+        \status{SHUTDWN} & System has been shut down \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{State Transitions}
+
+The state transition diagram is shown in Figure~\ref{fig:state-transitions}.
+
+\begin{figure}[h]
+    \centering
+    \begin{verbatim}
+                    +----------+
+                    | BOOTING  |<----+
+                    +----------+     |
+                         |           |
+                    INI complete     |
+                         |           |
+                         v           |
+                    +----------+     |
+                    | NORMAL   |     |
+                    +----------+     |
+                         |           |
+                    SHT command      |
+                         |           |
+                         v           |
+                    +----------+     |
+                    | SHUTDWN  |-----+
+                    +----------+  INI command
+    \end{verbatim}
+    \caption{State Transition Diagram}
+    \label{fig:state-transitions}
+\end{figure}
+
+\subsection{State Transition Events}
+
+\begin{itemize}
+    \item \textbf{BOOTING $\rightarrow$ NORMAL}: INI sequence completes successfully; all threads started
+    \item \textbf{NORMAL $\rightarrow$ SHUTDWN}: SHT command received; state transitions immediately, then all threads stopped
+    \item \textbf{SHUTDWN $\rightarrow$ BOOTING}: INI command received; initialization begins
+\end{itemize}
+
+\section{Command Exit Codes}
+
+Commands return the exit codes listed in Table~\ref{tab:exit-codes} to indicate success or failure reason.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Command Exit Codes}
+    \label{tab:exit-codes}
+    \begin{tabular}{cp{9cm}}
+        \toprule
+        \textbf{Code} & \textbf{Description} \\
+        \midrule
+        \hex{00} & Process accepted without error \\
+        \hex{01} & Invalid arguments to command (e.g., unknown \DR{} name or unknown copy ID) \\
+        \hex{02} & Other error running command (e.g., error queuing copy or delete) \\
+        \hex{03} & Blocking operation in progress (INI or SHT is active) \\
+        \hex{04} & Subsystem needs to be initialized (system is in SHUTDWN state) \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Error Response Format}
+
+When a command is rejected, the response data contains the exit code and explanation:
+
+\begin{lstlisting}[caption={Error Response Format}]
+0x<CODE>! <LASTLOG MESSAGE>
+\end{lstlisting}
+
+Example responses:
+\begin{itemize}
+    \item \code{0x01! SCP: Invalid arguments to command - unknown data recorder DR7}
+    \item \code{0x03! INI: Blocking operation in progress - SHT is active and blocking}
+    \item \code{0x04! SCP: Subsystem needs to be initialized}
+\end{itemize}
+
+\section{Process Locking}
+
+\SC{} maintains a process list to prevent conflicting operations:
+
+\begin{itemize}
+    \item \textbf{INI}: Blocks other INI and SHT commands
+    \item \textbf{SHT}: Blocks other INI and SHT commands
+\end{itemize}
+
+The \code{activeProcess} list tracks currently running blocking operations. Data management commands (\cmd{SCP}, \cmd{SRM}, \cmd{PAU}, \cmd{RES}, \cmd{SCN}) do not block each other but require the system to be in the \status{NORMAL} state.
+
+\section{Email Notifications}
+
+\SC{} sends email notifications for failed transfers. The notification system:
+
+\begin{itemize}
+    \item Runs daily alongside the purge operations
+    \item Collects all failed items for each \DR{} queue
+    \item Generates a report listing each failed file with its path, size, and failure reason
+    \item Sends the report via SMTP with TLS using the sender address and credentials from the \code{email} section of \file{defaults.json} (resolved via \code{lwa\_auth})
+    \item The recipient list is currently hardcoded in the source
+    \item After notification, failed records are purged from the database
+\end{itemize}
