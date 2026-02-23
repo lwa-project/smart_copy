@@ -57,6 +57,9 @@ smartCopyHelper.py [-v] [-o OBS] [-m] filename [filename ...] ucfuser
 | `-m, --metadata` | Include the metadata tarball with the copy |
 | `-v, --version` | Display version information |
 
+
+*Note: `-o, --observations` is only relevant for TBS observations.*
+
 **Example:**
 ```bash
 # Copy all observations from a metadata tarball
@@ -83,6 +86,8 @@ smartCopyLeo.py [-v] [-o OBS] [-m] [-a PROJECTS] filename [filename ...]
 | `-m, --metadata` | Include the metadata tarball with the copy |
 | `-a, --allowed-projects` | Comma-separated list of projects to copy non-spectrometer data for |
 | `-v, --version` | Display version information |
+
+*Note: `-o, --observations` is only relevant for TBS observations.*
 
 **Example:**
 ```bash
@@ -228,17 +233,17 @@ Valid MIB entries:
 | `SUBSYSTEM` | Subsystem identifier (`SCM`) |
 | `SERIALNO` | Serial number |
 | `VERSION` | Software version |
-| `OBSSTATUS_DR#` | Whether DR# is recording data |
-| `QUEUE_SIZE_DR#` | Number of items in DR#'s copy queue |
-| `QUEUE_STATUS_DR#` | Status of DR#'s copy queue |
-| `QUEUE_STATS_DR#` | Queue statistics for DR# |
+| `OBSSTATUS_DR{n}` | Whether DR{n} is recording data |
+| `QUEUE_SIZE_DR{n}` | Number of items in DR{n}'s copy queue |
+| `QUEUE_STATUS_DR{n}` | Status of DR{n}'s copy queue |
+| `QUEUE_STATS_DR{n}` | Queue statistics for DR{n} |
 | `QUEUE_ENTRY_#` | Details of a specific copy command |
-| `ACTIVE_ID_DR#` | Active copy command ID on DR# |
-| `ACTIVE_STATUS_DR#` | Active copy status on DR# |
-| `ACTIVE_BYTES_DR#` | Bytes transferred by active copy on DR# |
-| `ACTIVE_PROGRESS_DR#` | Progress of active copy on DR# |
-| `ACTIVE_SPEED_DR#` | Transfer speed of active copy on DR# |
-| `ACTIVE_REMAINING_DR#` | Estimated time remaining on DR# |
+| `ACTIVE_ID_DR{n}` | Active copy command ID on DR{n} |
+| `ACTIVE_STATUS_DR{n}` | Active copy status on DR{n} |
+| `ACTIVE_BYTES_DR{n}` | Bytes transferred by active copy on DR{n} |
+| `ACTIVE_PROGRESS_DR{n}` | Progress of active copy on DR{n} |
+| `ACTIVE_SPEED_DR{n}` | Transfer speed of active copy on DR{n} |
+| `ACTIVE_REMAINING_DR{n}` | Estimated time remaining on DR{n} |
 
 **Example:**
 ```bash
