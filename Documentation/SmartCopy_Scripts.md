@@ -237,7 +237,7 @@ Valid MIB entries:
 | `QUEUE_SIZE_DR{n}` | Number of items in DR{n}'s copy queue |
 | `QUEUE_STATUS_DR{n}` | Status of DR{n}'s copy queue |
 | `QUEUE_STATS_DR{n}` | Queue statistics for DR{n} |
-| `QUEUE_ENTRY_#` | Details of a specific copy command |
+| `QUEUE_ENTRY_{n}` | Details of a specific copy command |
 | `ACTIVE_ID_DR{n}` | Active copy command ID on DR{n} |
 | `ACTIVE_STATUS_DR{n}` | Active copy status on DR{n} |
 | `ACTIVE_BYTES_DR{n}` | Bytes transferred by active copy on DR{n} |
