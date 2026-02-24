@@ -1,0 +1,52 @@
+% macros.tex - SmartCopy-specific macros
+%
+% Common ICD macros (noteBox, siteNote, newInVersion, calloutBox, \cmd,
+% \mib, \hex, \reg, \newInVer, etc.) are provided by the lwa-icd class.
+% Add only project-specific macros here.
+
+% Subsystem names
+\newcommand{\SC}{SmartCopy}
+\newcommand{\MCS}{MCS}
+\newcommand{\DR}{DR}
+\newcommand{\UCF}{UCF}
+
+% Station names
+\newcommand{\LWA}{LWA}
+\newcommand{\LWAI}{LWA1}
+\newcommand{\LWASV}{LWA-SV}
+\newcommand{\LWANA}{LWA-NA}
+
+% Command formatting
+\newcommand{\mibentry}[1]{\texttt{#1}}
+\newcommand{\param}[1]{\textit{#1}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\file}[1]{\texttt{#1}}
+
+% Status codes
+\newcommand{\status}[1]{\texttt{#1}}
+
+% Data types
+\newcommand{\dtype}[1]{\texttt{#1}}
+
+% Table column types
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash}p{#1}}
+
+% Note environment
+\newenvironment{note}{%
+    \par\vspace{0.5em}%
+    \noindent\textbf{Note:}%
+    \itshape
+}{%
+    \par\vspace{0.5em}%
+}
+
+% Warning environment
+\newenvironment{warning}{%
+    \par\vspace{0.5em}%
+    \noindent\textbf{Warning:}%
+    \itshape
+}{%
+    \par\vspace{0.5em}%
+}

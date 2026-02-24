@@ -1,0 +1,106 @@
+% 01-description.tex - Description and Scope
+
+\chapter{Description}
+\label{sec:description}
+
+\section{Purpose}
+
+This document defines the interface control specifications for the \SC{} system. \SC{} is an autonomous data management system that runs on the \MCS{} task processor at LWA stations, providing intelligent file copying and deletion services for the Data Recorders (\DR{}s). Its primary functions include:
+
+\begin{itemize}
+    \item Queued file copying from \DR{}s to local and remote destinations, e.g., the \LWA{} \UCF{}
+    \item Queued file deletion with configurable purge thresholds
+    \item Per-\DR{} queue management with pause and resume capabilities
+    \item Automatic retry of failed transfers with configurable backoff
+    \item Bandwidth-limited remote transfers
+    \item Station monitoring to avoid copying during active observations
+\end{itemize}
+
+This ICD serves as the authoritative reference for developers, integrators, and operators working with the \SC{} system.
+
+\section{Scope}
+
+This document covers the following aspects of the \SC{} system:
+
+\begin{enumerate}
+    \item \textbf{Command Interface}: UDP-based command protocol for communicating with \SC{}, including system commands, copy/delete commands, and queue management commands.
+
+    \item \textbf{Queue Management}: Per-\DR{} persistent queuing system backed by SQLite, including queue operations, retry logic, and automatic purging.
+
+    \item \textbf{Copy Engine}: The \code{rsync}-based file transfer engine, including local copies, remote copies via SSH, bandwidth limiting, pause/resume, and destination file truncation.
+
+    \item \textbf{Station Monitoring}: Monitoring of the \MCS{} log file to track \DR{} busy/idle states and avoid copying during active recording. Because \SC{} operates independently from \MCS{}, reading the log file is its only mechanism for observing station activity.
+
+    \item \textbf{Status and Error Handling}: System state management, exit codes, error reporting, and email notifications.
+\end{enumerate}
+
+\section{System Overview}
+
+\SC{} runs on the \MCS{} task processor at LWA stations and communicates with the \DR{}s via SSH for file operations. Although \SC{} uses the same network infrastructure as \MCS{} and other LWA subsystems, it operates independently: \MCS{} does not see or route \SC{} messages, and \SC{} cannot see \MCS{} or subsystem messages. This separation is why \SC{} must monitor the \MCS{} log file to track \DR{} state (see Section~\ref{sec:station-monitoring}). The system receives commands via UDP and manages independent copy queues for each \DR{}. The system architecture consists of:
+
+\begin{description}
+    \item[Command Handler] Receives and processes UDP commands using a packet format based on the \MCS{} packet protocol. The command handler listens for incoming packets, dispatches commands to the appropriate functions, and returns responses.
+
+    \item[Reference Server] A \O{}MQ REP socket that serves unique reference IDs for command packets. The reference ID counter is periodically saved to disk and survives restarts.
+
+    \item[Station Monitor] A background thread that tails the \MCS{} \file{mselog.txt} log file to track \DR{} busy/idle states. Because \SC{} cannot directly observe \MCS{} traffic, the log file is its only source of station activity information. When a \DR{} transitions to idle, its copy queue is automatically resumed; when it becomes busy (recording), the queue is paused.
+
+    \item[DR Queue Managers] One background thread per \DR{} that processes the persistent copy queue. Each manager pulls items from the queue, executes copy or delete operations, handles retries, and manages completed/failed file tracking.
+
+    \item[Copy Engine] The \code{InterruptibleCopy} class that wraps \code{rsync} for file transfers. Supports local copies, remote copies via SSH, bandwidth limiting, pause/resume via process signals, and progress tracking.
+\end{description}
+
+\section{Key Functions}
+
+\SC{} performs the following primary functions:
+
+\subsection{Command Processing}
+
+\SC{} accepts commands via UDP packets:
+\begin{itemize}
+    \item \cmd{PNG}: Ping/heartbeat verification
+    \item \cmd{INI}: System initialization
+    \item \cmd{SHT}: System shutdown
+    \item \cmd{SCP}: Queue a file copy operation
+    \item \cmd{SRM}: Queue a file delete operation
+    \item \cmd{PAU}: Pause a \DR{} copy queue
+    \item \cmd{RES}: Resume a \DR{} copy queue
+    \item \cmd{SCN}: Cancel a queued copy
+    \item \cmd{RPT}: Report MIB (Management Information Base) entries
+\end{itemize}
+
+\subsection{File Transfer}
+
+When a copy command is received, \SC{}:
+\begin{itemize}
+    \item Assigns a unique ID to the copy operation
+    \item Adds the operation to the appropriate \DR{}'s persistent queue
+    \item Waits for the \DR{} to become idle before starting the transfer
+    \item Executes the transfer using \code{rsync} with progress monitoring
+    \item Tracks completed files for later source deletion
+    \item Retries failed transfers with configurable wait intervals
+\end{itemize}
+
+\subsection{Source File Purging}
+
+\SC{} manages source file cleanup:
+\begin{itemize}
+    \item Tracks completed transfers and their file sizes
+    \item When accumulated completed data exceeds the \code{purge\_size} threshold (default: 1~TB), deletes source files from the \DR{}
+    \item Purge runs are performed daily at 18:00~UTC
+    \item Spectrometer files are only eligible for deletion after being copied to the remote archive
+\end{itemize}
+
+\subsection{Failure Notification}
+
+\SC{} sends email notifications for failed transfers:
+\begin{itemize}
+    \item Failed file reports are generated daily alongside purge operations
+    \item Reports include file paths, sizes, and failure reasons
+    \item Notifications are sent to the operations mailing list via SMTP
+\end{itemize}
+
+\section{Applicable Stations}
+
+This ICD applies to all LWA stations running the \SC{} system. Station-specific configuration parameters are defined in the \file{defaults.json} configuration file.
+

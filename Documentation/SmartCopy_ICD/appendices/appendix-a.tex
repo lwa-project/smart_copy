@@ -1,0 +1,139 @@
+% appendix-a.tex - Exit Codes and Status Reference
+
+\chapter{Exit and Status Code Reference}
+\label{appendix:codes}
+
+This appendix provides a complete reference of all exit codes and status values used by \SC{}.
+
+\section{Command Exit Codes}
+
+The following exit codes are returned by \SC{} commands in the response data field when a command is rejected:
+
+\begin{longtable}{clp{7cm}}
+    \toprule
+    \textbf{Code} & \textbf{Constant} & \textbf{Description} \\
+    \midrule
+    \endfirsthead
+    \toprule
+    \textbf{Code} & \textbf{Constant} & \textbf{Description} \\
+    \midrule
+    \endhead
+    \midrule
+    \multicolumn{3}{r}{\textit{Continued on next page}} \\
+    \endfoot
+    \bottomrule
+    \endlastfoot
+    \hex{00} & SUCCESS & Process accepted without error \\
+    \hex{01} & INVALID\_ARGS & Invalid arguments to command; unrecognized DR name, unknown copy ID, or unknown MIB entry \\
+    \hex{02} & OTHER\_ERROR & Other error running command; general error condition such as failure to queue a copy or delete operation \\
+    \hex{03} & BLOCKING\_OP & Blocking operation in progress; INI or SHT command is currently executing and prevents new INI/SHT operations \\
+    \hex{04} & NOT\_INITIALIZED & Subsystem needs to be initialized; system is in SHUTDWN state and requires INI before accepting data management commands \\
+\end{longtable}
+
+\section{System Status Values}
+
+The 7-character status strings reported via \mibentry{SUMMARY}:
+
+\begin{longtable}{lp{10cm}}
+    \toprule
+    \textbf{Status} & \textbf{Description} \\
+    \midrule
+    \endfirsthead
+    \toprule
+    \textbf{Status} & \textbf{Description} \\
+    \midrule
+    \endhead
+    \midrule
+    \multicolumn{2}{r}{\textit{Continued on next page}} \\
+    \endfoot
+    \bottomrule
+    \endlastfoot
+    \status{BOOTING} & System is initializing. Occurs after INI command is received and while initialization sequence is in progress. Data management commands are not accepted. \\
+    \status{NORMAL } & System operating normally. All DR queue managers running, station monitor active, and system ready to accept data management commands. \\
+    \status{SHUTDWN} & System has been shut down. Occurs after SHT command completes. All monitoring and queue processing threads stopped. Pending queue items are preserved in the database. Requires INI to restart. \\
+\end{longtable}
+
+\section{Response Code Characters}
+
+Single-character response codes in packet byte 38 are listed in Table~\ref{tab:response-chars}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Response Code Characters}
+    \label{tab:response-chars}
+    \begin{tabular}{clp{8cm}}
+        \toprule
+        \textbf{Code} & \textbf{Meaning} & \textbf{Description} \\
+        \midrule
+        \code{A} & Accepted & Command was accepted and executed successfully \\
+        \code{R} & Rejected & Command was rejected; see response data for exit code and reason \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Queue Item Statuses}
+
+Status values stored in the \code{queue\_items.status} column of the SQLite database:
+
+\begin{longtable}{lp{10cm}}
+    \toprule
+    \textbf{Status} & \textbf{Description} \\
+    \midrule
+    \endfirsthead
+    \toprule
+    \textbf{Status} & \textbf{Description} \\
+    \midrule
+    \endhead
+    \midrule
+    \multicolumn{2}{r}{\textit{Continued on next page}} \\
+    \endfoot
+    \bottomrule
+    \endlastfoot
+    \code{pending} & Item is in the queue waiting to be processed. This is the initial status for all new items and the status items return to after a failed attempt with retries remaining. \\
+    \code{processing} & Item has been dequeued and is currently being copied or deleted. If found on startup (indicating an interrupted operation), the item is automatically reset to \code{pending}. \\
+    \code{completed} & Transfer completed successfully. The source file is eligible for deletion during the next purge cycle. These records accumulate until the purge threshold is reached. \\
+    \code{failed} & Transfer has permanently failed due to exhausted retries or missing source file. A failure notification will be sent via email and the record will be purged. \\
+\end{longtable}
+
+\section{Copy Operation Statuses}
+
+Status strings returned by the \code{InterruptibleCopy} engine and visible in \mibentry{ACTIVE\_STATUS} MIB entries:
+
+\begin{longtable}{lp{9cm}}
+    \toprule
+    \textbf{Status} & \textbf{Description} \\
+    \midrule
+    \endfirsthead
+    \toprule
+    \textbf{Status} & \textbf{Description} \\
+    \midrule
+    \endhead
+    \midrule
+    \multicolumn{2}{r}{\textit{Continued on next page}} \\
+    \endfoot
+    \bottomrule
+    \endlastfoot
+    \code{active} & Copy is currently running \\
+    \code{active/started for ...} & Copy has just been started (includes source and destination) \\
+    \code{active/resumed for ...} & Copy has been resumed after a pause (includes source and destination) \\
+    \code{paused} & Copy has been paused (rsync process killed, ready to resume) \\
+    \code{paused for ...} & Copy is paused (includes source and destination) \\
+    \code{queued for ...} & Copy is waiting in the queue (includes source and destination) \\
+    \code{complete} & Copy completed successfully \\
+    \code{canceled} & Copy was canceled via SCN command \\
+    \code{error: ...} & Copy failed (includes error details from rsync stderr) \\
+    \code{error: too soon to retry} & Retry interval has not elapsed since last attempt \\
+\end{longtable}
+
+\section{Error Response Format}
+
+Error responses are returned with an \code{R} (Rejected) response code in byte 38 of the response packet. The response data contains:
+
+\begin{enumerate}
+    \item Exit code in hexadecimal (e.g., \hex{04})
+    \item Exclamation point delimiter
+    \item Command name and colon separator
+    \item Descriptive error message from the \mibentry{LASTLOG} state
+\end{enumerate}
+
+Example: \code{0x01! SCP: Invalid arguments to command - unknown data recorder DR7}

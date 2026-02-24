@@ -1,0 +1,135 @@
+% 04-queue-management.tex - Queue Management
+
+\chapter{Queue Management}
+\label{sec:queue-management}
+
+This section describes the persistent queue system used by \SC{} to manage copy and delete operations.
+
+\section{Queue Architecture}
+
+\SC{} maintains one logical queue per \DR{} (DR1--DR5), all backed by a single shared SQLite database file (\file{smartcopy.db}). Each queue operates as a FIFO (First In, First Out) structure with the following properties:
+
+\begin{itemize}
+    \item \textbf{Persistence}: All queue items are persisted to disk via SQLite, surviving system restarts and crashes
+    \item \textbf{Thread Safety}: Database access is protected by a reentrant lock (\code{threading.RLock}) shared across all queue instances
+    \item \textbf{WAL Mode}: The database uses Write-Ahead Logging for improved concurrent read/write performance
+    \item \textbf{Transactional}: All queue mutations use \code{IMMEDIATE} transactions for atomicity
+    \item \textbf{Integrity Recovery}: On startup, any items left in ``processing'' state (from a crash) are automatically reset to ``pending''
+\end{itemize}
+
+\section{Database Schema}
+
+The queue database schema is shown in Table~\ref{tab:db-schema}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Queue Database Schema (\code{queue\_items} Table)}
+    \label{tab:db-schema}
+    \begin{tabular}{llp{6cm}}
+        \toprule
+        \textbf{Column} & \textbf{Type} & \textbf{Description} \\
+        \midrule
+        \code{id} & INTEGER & Auto-incrementing primary key \\
+        \code{queue\_name} & TEXT & Queue identifier (e.g., ``DR1'', ``DR2'') \\
+        \code{host} & TEXT & Source hostname \\
+        \code{hostpath} & TEXT & Source file path \\
+        \code{dest} & TEXT & Destination hostname \\
+        \code{destpath} & TEXT & Destination file path (or delete marker) \\
+        \code{filesize} & INTEGER & File size in bytes (default: 0) \\
+        \code{command\_id} & INTEGER & Unique copy/delete ID \\
+        \code{retry\_count} & INTEGER & Number of retry attempts (default: 0) \\
+        \code{last\_try} & REAL & Timestamp of last attempt (default: 0.0) \\
+        \code{status} & TEXT & Item status (default: ``pending'') \\
+        \code{created\_at} & TIMESTAMP & Creation timestamp \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Two indexes are maintained for query performance:
+\begin{itemize}
+    \item \code{idx\_queue\_status} on \code{(queue\_name, status)} --- used for queue operations and statistics
+    \item \code{idx\_created} on \code{(created\_at)} --- used for time-based queries
+\end{itemize}
+
+\section{Item Status Lifecycle}
+
+Queue items progress through the statuses shown in Table~\ref{tab:item-status}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Queue Item Statuses}
+    \label{tab:item-status}
+    \begin{tabular}{lp{9cm}}
+        \toprule
+        \textbf{Status} & \textbf{Description} \\
+        \midrule
+        \code{pending} & Item is waiting in the queue to be processed \\
+        \code{processing} & Item has been dequeued and is currently being copied/deleted \\
+        \code{completed} & Transfer completed successfully; source file eligible for purging \\
+        \code{failed} & Transfer failed after exhausting all retry attempts or the source file no longer exists \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The lifecycle of a queue item is:
+
+\begin{enumerate}
+    \item Item is added via \cmd{SCP} or \cmd{SRM} with status \code{pending}
+    \item When dequeued for processing, status changes to \code{processing}
+    \item On completion, the \code{processing} row is deleted and a new \code{completed} row is inserted (for successful copies) or a \code{failed} row (for permanent failures)
+    \item If a copy fails but retries remain, the item is re-added as \code{pending} with an incremented \code{retry\_count}
+\end{enumerate}
+
+\section{Retry Logic}
+
+Failed copy operations are retried according to the following rules:
+
+\begin{itemize}
+    \item The maximum number of retries is controlled by the \code{max\_retry} configuration parameter (default: 7)
+    \item The minimum wait time between retries is controlled by the \code{wait\_retry} configuration parameter (default: 24 hours)
+    \item If a retry is attempted too soon (within \code{wait\_retry} hours of the last attempt), the item is returned to the end of the queue
+    \item A copy is permanently failed if:
+    \begin{itemize}
+        \item The source file no longer exists, or
+        \item The retry count has reached \code{max\_retry}
+    \end{itemize}
+    \item Delete operations (via \cmd{SRM}) have their retry count incremented by an additional 100 (on top of the normal increment of 1) to distinguish them from copy retries
+\end{itemize}
+
+\section{Remote Copy Exclusivity}
+\label{sec:remote-exclusivity}
+
+To prevent network saturation, only one remote copy may be active at any time across all \DR{} queues. In this context, a copy is considered remote when the source and destination hostnames differ (regardless of whether the destination is on the local network or behind a gateway). This is a simpler test than the gateway detection used for bandwidth limiting (Section~\ref{sec:bw-gateway-detection}). Exclusivity is enforced by a shared \code{threading.Semaphore}. When a \DR{} queue manager encounters a remote copy item:
+
+\begin{enumerate}
+    \item It attempts to acquire the remote copy lock (non-blocking)
+    \item If the lock is unavailable, the item is returned to the end of the queue and processing is deferred
+    \item If the lock is acquired, the remote copy proceeds with the configured bandwidth limit
+    \item The lock is released when the copy completes (successfully or with failure)
+\end{enumerate}
+
+\section{Delete Markers}
+
+Delete operations use special destination path markers to distinguish them from copy operations. When an \cmd{SRM} command is received, the destination path is set to one of two marker values:
+
+\begin{description}
+    \item[\code{smartcopy\_queue\_delete\_this\_file}] Deferred delete: the file is marked as complete immediately and will be deleted during the next purge cycle.
+    \item[\code{smartcopy\_now\_delete\_this\_file}] Immediate delete (via \code{-tNOW}): the file is deleted via \code{rm -f} as soon as the item is processed.
+\end{description}
+
+\section{Purge Operations}
+
+The purge process runs daily at approximately 18:00~UTC and operates as follows:
+
+\begin{enumerate}
+    \item Collect all items with status \code{completed} for the \DR{}
+    \item Sum the total file sizes
+    \item If the total exceeds the \code{purge\_size} threshold (default: 1~TB), proceed with deletion
+    \item For each completed file, execute \code{sudo rm -f} on the \DR{} via SSH
+    \item Files that could not be deleted (e.g., due to the queue being paused) are retained for the next purge cycle
+    \item After purging, purge all \code{completed} records from the database
+\end{enumerate}
+
+\begin{calloutBox}{Implementation Note}{blue}
+Spectrometer files (paths containing \file{DROS/Spec}) are only added to the completed list after being successfully copied to the remote archive. This prevents data loss if a spectrometer file is copied locally but not yet archived remotely.
+\end{calloutBox}

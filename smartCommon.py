@@ -13,6 +13,7 @@ import traceback
 import subprocess
 import logging
 import sqlite3
+import socket
 from io import StringIO
 from socket import gethostname
 
@@ -29,10 +30,6 @@ smartCommonLogger = logging.getLogger('__main__')
 DELETE_MARKER_QUEUE = 'smartcopy_queue_delete_this_file'
 DELETE_MARKER_NOW   = 'smartcopy_now_delete_this_file'
 
-
-IS_UNRELIABLE_LINK = False
-if gethostname().split('-', 1)[0] in ('lwasv',):
-    IS_UNRELIABLE_LINK = True
 
 
 class SerialNumber(object):
@@ -476,7 +473,7 @@ class DiskBackedQueue(Queue.Queue):
 class InterruptibleCopy(object):
     _rsyncRE = re.compile('.*?(?P<transferred>\d) +(?P<progress>\d{1,3}%) +(?P<speed>\d+\.\d+[ kMG]B/s) +(?P<remaining>.*)')
     
-    def __init__(self, host, hostpath, dest, destpath, id=None, tries=0, last_try=0.0, bw_limit=0.0):
+    def __init__(self, host, hostpath, dest, destpath, id=None, tries=0, last_try=0.0, bw_limit=0.0, wait_retry=24):
         # Copy setup
         self.host = host
         self.hostpath = hostpath
@@ -502,7 +499,7 @@ class InterruptibleCopy(object):
         self.status = ''
         
         # Start the copy or delete running
-        if time.time() - self.last_try > 86400.0:
+        if time.time() - self.last_try > wait_retry*3600:
             self.resume()
         else:
             self.status = 'error: too soon to retry'
@@ -763,16 +760,39 @@ class InterruptibleCopy(object):
         
         return True
         
+    def _is_remote_destination(self):
+        """
+        Determine if the destination requires traversing a gateway by checking
+        the kernel routing table.  For locally originating copies the check runs
+        locally; for DR-originating copies the check runs on the DR via SSH.
+        Returns True if the destination appears to be behind a gateway.
+        """
+
+        try:
+            dest_ip = socket.getaddrinfo(self.dest, None)[0][4][0]
+        except (socket.gaierror, IndexError):
+            smartCommonLogger.warning('Cannot resolve destination %s, assuming remote', self.dest)
+            return True
+
+        try:
+            if self.host == '':
+                cmd = ['ip', 'route', 'get', dest_ip]
+            else:
+                cmd = ['ssh', '-t', '-t', 'mcsdr@%s' % self.host.lower(),
+                       'ip route get %s' % dest_ip]
+            output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=10, text=True)
+            return ' via ' in output
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+            smartCommonLogger.warning('Route check failed for %s: %s, assuming remote', self.dest, str(e))
+            return True
+
     def _getTruncateCommand(self):
         """
-        Build up a subprocess-compatible command needed to truncate a file on 
-        unreliable links.  This returns None if no truncate command is needed.
+        Build up a subprocess-compatible command needed to truncate the
+        destination file before resuming a copy.  This returns None if no
+        truncate command is needed.
         """
         
-        if not IS_UNRELIABLE_LINK:
-            # Ignore reliable links
-            cmd = None
-            
         if self.host == '':
             # Locally originating copy
             cmd = ['bash', '-c', "if test -e %s; then truncate -c -s -512K %%s; fi" % self.hostpath]
@@ -810,7 +830,8 @@ class InterruptibleCopy(object):
         
         if self.host == '':
             # Locally originating copy
-            cmd = ["rsync",  "-avH",  "--append", "--partial", "--progress", self.hostpath]
+            cmd = ["rsync",  "-avH",  "--append", "--partial", "--progress",
+                   "-e", "ssh -o BatchMode=yes", self.hostpath]
             
             if self.dest == '':
                 # Local destination
@@ -819,6 +840,8 @@ class InterruptibleCopy(object):
                 # Remote destination
                 ## --append-verify should be ok here
                 cmd[cmd.index('--append')] = '--append-verify'
+                if self.bw_limit > 0 and self._is_remote_destination():
+                    cmd.insert(-1, "--bwlimit=%.2fm" % self.bw_limit)
                 cmd.append( "%s:%s" % (self.dest, self.destpath) )
                 
         else:
@@ -831,8 +854,8 @@ class InterruptibleCopy(object):
             else:
                 # Source and destination are on different machines
                 ## --append-verify should be ok here
-                rcmd = "rsync -avH --append-verify --partial --progress"
-                if self.bw_limit > 0:
+                rcmd = "rsync -avH --append-verify --partial --progress -e 'ssh -o BatchMode=yes'"
+                if self.bw_limit > 0 and self._is_remote_destination():
                     rcmd += (" --bwlimit=%.2fm" % self.bw_limit)
                 cmd.append( 'shopt -s huponexit && %s %s %s:%s' % (rcmd, self.hostpath, self.dest, self.destpath) )
                 
@@ -846,7 +869,7 @@ class InterruptibleCopy(object):
         # Get the command to use
         cmd = self._getCopyCommand()
         
-        # Deal with unreliable links when copying data
+        # Truncate the destination file before resuming to avoid corruption
         trunc = self._getTruncateCommand()
         if trunc is not None:
             try:
@@ -937,7 +960,7 @@ class InterruptibleCopy(object):
         
         if self.host == '':
             # Locally originating delete
-            cmd = ["rm" "-f", self.hostpath]
+            cmd = ["rm", "-f", self.hostpath]
             
         else:
             # Remotely originating delete
