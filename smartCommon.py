@@ -830,7 +830,8 @@ class InterruptibleCopy(object):
         
         if self.host == '':
             # Locally originating copy
-            cmd = ["rsync",  "-avH",  "--append", "--partial", "--progress", self.hostpath]
+            cmd = ["rsync",  "-avH",  "--append", "--partial", "--progress",
+                   "-e", "ssh -o BatchMode=yes", self.hostpath]
             
             if self.dest == '':
                 # Local destination
@@ -853,7 +854,7 @@ class InterruptibleCopy(object):
             else:
                 # Source and destination are on different machines
                 ## --append-verify should be ok here
-                rcmd = "rsync -avH --append-verify --partial --progress"
+                rcmd = "rsync -avH --append-verify --partial --progress -e 'ssh -o BatchMode=yes'"
                 if self.bw_limit > 0 and self._is_remote_destination():
                     rcmd += (" --bwlimit=%.2fm" % self.bw_limit)
                 cmd.append( 'shopt -s huponexit && %s %s %s:%s' % (rcmd, self.hostpath, self.dest, self.destpath) )
