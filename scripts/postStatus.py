@@ -3,11 +3,10 @@
 import os
 import sys
 import json
-import pytz
 import time
 import subprocess
 from socket import gethostname
-from datetime import datetime
+from datetime import datetime, timezone
 
 from lwa_auth import KEYS as LWA_AUTH_KEYS
 from lwa_auth.signed_requests import post as signed_post
@@ -16,13 +15,11 @@ URL = "https://lwalab.phys.unm.edu/OpScreen/update"
 SITE = gethostname().split('-', 1)[0]
 PATH = os.path.dirname(os.path.abspath(__file__))
 
-UTC = pytz.UTC
-
 def _serialize_datetime(value):
     try:
         if value.tzinfo is not None:
-            value = value.astimezone(UTC)
-        return value.isoformat() + 'Z'
+            value = value.astimezone(timezone.utc)
+        return value.isoformat().replace('+00:00', '') + 'Z'
     except AttributeError:
         return value
 
@@ -97,7 +94,7 @@ data = [{'site': SITE,
          'progress': active_progress,
          'remaining': active_remaining,
          'speed': active_speed,
-         'update': datetime.utcnow()},]
+         'update': datetime.now(tz=timezone.utc)},]
 data = json.dumps(data, default=_serialize_datetime)
 f = signed_post(LWA_AUTH_KEYS.get(SITE+'-log', kind='private'), URL,
                 data={'site': 'elwa', 'subsystem': 'ASP', 'data': data})

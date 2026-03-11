@@ -7,7 +7,7 @@ import math
 import time
 import socket
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 
 import netifaces
 
@@ -44,7 +44,7 @@ def getTime():
     """
     
     # determine current time
-    dt = datetime.utcnow()
+    dt = datetime.now(tz=timezone.utc)
     year        = dt.year             
     month       = dt.month      
     day         = dt.day    

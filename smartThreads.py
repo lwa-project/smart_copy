@@ -14,7 +14,7 @@ import traceback
 import subprocess
 import logging
 from io import StringIO
-from datetime import datetime
+from datetime import datetime, timezone
 
 import smtplib
 from email.mime.text import MIMEText
@@ -702,7 +702,7 @@ class ManageDR(object):
             
             ### The report
             msg = MIMEText(report)
-            msg['Subject'] = '%s - Recent SmartCopy Failures for %s - %s' % (SITE.upper(), self.dr, datetime.utcnow().strftime("%Y/%m/%d"),)
+            #msg['Subject'] = '%s - Recent SmartCopy Failures for %s - %s' % (SITE.upper(), self.dr, datetime.now(tz=timezone.utc).strftime("%Y/%m/%d"),)
             msg['From'] = self.config['email']['username']
             msg['To'] = ','.join(to)
             if cc is not None:
