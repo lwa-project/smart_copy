@@ -657,7 +657,7 @@ class InterruptibleCopy(object):
         if self.thread is None:
             return False
         else:
-            if self.thread.isAlive():
+            if self.thread.is_alive():
                 return True
             else:
                 return False
