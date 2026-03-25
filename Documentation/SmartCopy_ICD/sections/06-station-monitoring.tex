@@ -1,0 +1,76 @@
+% 06-station-monitoring.tex - Station Monitoring
+
+\chapter{Station Monitoring}
+\label{sec:station-monitoring}
+
+This section describes how \SC{} monitors station activity to coordinate copy operations with \DR{} recording schedules.
+
+\section{MCS Log Monitoring}
+
+\SC{} monitors the \MCS{} log file (\file{/home/op1/MCS/sch/mselog.txt}) using \code{tail -F} to track \DR{} state changes in real time. The monitor thread runs continuously and processes log entries as they appear.
+
+\section{Log Entry Parsing}
+
+Each log entry is parsed to extract the fields listed in Table~\ref{tab:log-fields}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Parsed Log Entry Fields}
+    \label{tab:log-fields}
+    \begin{tabular}{clp{6cm}}
+        \toprule
+        \textbf{Field Index} & \textbf{Name} & \textbf{Description} \\
+        \midrule
+        5 & Reference ID & MCS command reference number \\
+        6 & Status Code & MCS command send status (2 = sent, 3 = responded, 8 = dead) \\
+        7 & Subsystem & Target subsystem identifier \\
+        8 & Command & MCS command name \\
+        9 & Data & Command arguments or response data \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Only entries for \DR{} subsystems (subsystem names starting with ``DR'') are processed.
+
+\section{State Determination}
+
+The monitor determines \DR{} busy/idle state based on the command status code and command type (Table~\ref{tab:state-rules}).
+
+\begin{table}[htbp]
+    \centering
+    \caption{DR State Determination Rules}
+    \label{tab:state-rules}
+    \begin{tabular}{cllc}
+        \toprule
+        \textbf{Status Code} & \textbf{Command} & \textbf{Condition} & \textbf{DR State} \\
+        \midrule
+        3 & \cmd{SHT}, \cmd{REC}, \cmd{SPC} & Responded & Busy \\
+        3 & \cmd{INI}, \cmd{STP} & Responded & Idle \\
+        3 & \cmd{RPT} (\code{OP-TYPE}) & Response starts with ``Idle'' & Idle \\
+        3 & \cmd{RPT} (\code{OP-TYPE}) & Response does not start with ``Idle'' & Busy \\
+        3 & \cmd{RPT} (\code{SUMMARY}) & Response is not ``NORMAL'' & Busy \\
+        3 & \cmd{RPT} (\code{SUMMARY}) & Response is ``NORMAL'' & (no change) \\
+        8 & Any & Subsystem dead & Busy \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{calloutBox}{Implementation Note}{blue}
+For \cmd{RPT} commands, the monitor uses a 64-entry cache to correlate responses (status code~3) with their original requests (status code~2). This is necessary because the response data alone does not indicate which MIB entry was queried.
+\end{calloutBox}
+
+\section{State Change Propagation}
+
+When a \DR{} state change is detected, the monitor notifies the \code{SmartCopy} controller, which takes the following actions:
+
+\begin{description}
+    \item[DR becomes idle] If the global inhibit flag for the \DR{} is not set, the \DR{}'s copy queue is automatically resumed.
+
+    \item[DR becomes busy] The \DR{}'s copy queue is paused, interrupting any active copy.
+\end{description}
+
+This ensures that copy operations do not interfere with active recording sessions.
+
+\section{Initialization Behavior}
+
+When the station monitor is started (or restarted during \cmd{INI}), all \DR{}s are initially assumed to be busy. Their copy queues are paused until the monitor observes log entries indicating an idle state. This conservative approach prevents copies from starting before the station state is known.

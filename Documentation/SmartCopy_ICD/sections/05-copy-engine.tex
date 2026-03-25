@@ -1,0 +1,163 @@
+% 05-copy-engine.tex - Copy Engine
+
+\chapter{Copy Engine}
+\label{sec:copy-engine}
+
+This section describes the \code{InterruptibleCopy} class that provides the file transfer capabilities of \SC{}.
+
+\section{Overview}
+
+The copy engine wraps \code{rsync} to provide reliable, resumable file transfers with real-time progress monitoring. Each active copy operation is managed by an \code{InterruptibleCopy} instance that runs the \code{rsync} process in a background thread and monitors its output.
+
+\section{Copy Modes}
+
+\SC{} supports four copy modes, determined by the relationship between the source host and destination host (Table~\ref{tab:copy-modes}).
+
+\begin{table}[htbp]
+    \centering
+    \caption{Copy Modes}
+    \label{tab:copy-modes}
+    \begin{tabular}{lp{4cm}p{5cm}}
+        \toprule
+        \textbf{Mode} & \textbf{Condition} & \textbf{Mechanism} \\
+        \midrule
+        Local to local & source host = ``'', dest host = ``'' & \code{rsync} locally, no SSH \\
+        Local to remote & source host = ``'', dest host $\neq$ ``'' & \code{rsync} from local filesystem to remote destination \\
+        Remote same-host & source host = dest host $\neq$ ``'' & SSH to \DR{}, \code{rsync} locally on the \DR{} \\
+        Remote to remote & source host $\neq$ ``'', source host $\neq$ dest host & SSH to source \DR{}, \code{rsync} to remote destination \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Local to Local Copy}
+
+For locally originating copies with a local destination, \SC{} executes:
+\begin{lstlisting}
+rsync -avH --append --partial --progress <src> <dest>
+\end{lstlisting}
+
+No SSH wrapper is used.
+
+\subsection{Local to Remote Copy}
+
+For locally originating copies with a remote destination, \SC{} executes:
+\begin{lstlisting}
+rsync -avH --append-verify --partial --progress <src> <dest>:<destpath>
+\end{lstlisting}
+
+Local to remote copies use \code{--append-verify} instead of \code{--append} for additional integrity checking. The bandwidth limit is applied when the destination is determined to be behind a gateway (see Section~\ref{sec:bw-gateway-detection}).
+
+\subsection{Remote Same-Host Copy}
+
+For copies where the source and destination are on the same \DR{}, \SC{} executes:
+\begin{lstlisting}
+ssh -t -t mcsdr@<DR> 'shopt -s huponexit && \
+    rsync -avH --append --partial --progress <src> <dest>'
+\end{lstlisting}
+
+The \code{shopt -s huponexit} ensures the \code{rsync} process is terminated if the SSH session is disconnected, preventing orphaned processes on the \DR{}.
+
+\subsection{Remote to Remote Copy}
+
+For copies where the source and destination are on different hosts, \SC{} executes:
+\begin{lstlisting}
+ssh -t -t mcsdr@<DR> 'shopt -s huponexit && \
+    rsync -avH --append-verify --partial --progress \
+    [--bwlimit=<limit>m] <src> <dest>:<destpath>'
+\end{lstlisting}
+
+Remote to remote copies use \code{--append-verify} instead of \code{--append} for additional integrity checking. The bandwidth limit is applied when the destination is determined to be behind a gateway (see Section~\ref{sec:bw-gateway-detection}).
+
+\section{Pause and Resume}
+
+Copy operations can be paused and resumed:
+
+\begin{description}
+    \item[Pause] The \code{rsync} subprocess is killed, terminating the transfer. The copy state is preserved and the status is set to ``paused''.
+
+    \item[Resume] A new \code{rsync} process is started with the same parameters. The \code{--append} (or \code{--append-verify}) flag ensures the transfer resumes from where it left off, only transferring bytes not already present at the destination.
+\end{description}
+
+Resuming a paused copy does not increment the retry counter.
+
+\section{Destination File Truncation}
+\label{sec:truncation}
+
+Before resuming a copy, \SC{} truncates the last 512~KB of the destination file. This addresses a failure mode where the final block of a partially transferred file may be corrupted due to an interruption during write. Because local and same-host copies use \code{rsync --append} (which does not verify existing data), truncation ensures the corrupted tail is discarded before appending resumes.
+
+The truncation is performed via:
+\begin{lstlisting}
+truncate -c -s -512K <destination_file>
+\end{lstlisting}
+
+This operation is applied only for local and same-host copies. Remote copies use \code{rsync --append-verify}, which checksums existing data, so truncation is not needed.
+
+\section{Bandwidth Limiting}
+\label{sec:bw-gateway-detection}
+
+For remote copies where the \code{bw\_limit} configuration parameter is non-zero, \SC{} applies \code{rsync}'s \code{--bwlimit} option to limit the transfer rate. Bandwidth limiting is only applied when the destination host is determined to be behind a network gateway, indicating that the traffic must traverse a wide-area link. This gateway-based definition of ``remote'' is stricter than the hostname comparison used for copy exclusivity (Section~\ref{sec:remote-exclusivity}): a copy to a different host on the local network is exclusive but not bandwidth-limited.
+
+\subsection{Gateway Detection}
+
+Before starting a copy, \SC{} resolves the destination hostname to an IP address and queries the kernel routing table using \code{ip route get}. If the route to the destination includes a gateway hop (indicated by \code{via} in the output), the destination is considered remote and bandwidth limiting is applied.
+
+For locally originating copies, the route check runs on the local host:
+\begin{lstlisting}
+ip route get <dest_ip>
+\end{lstlisting}
+
+For \DR{}-originating copies, the route check runs on the \DR{} via SSH:
+\begin{lstlisting}
+ssh -t -t mcsdr@<DR> 'ip route get <dest_ip>'
+\end{lstlisting}
+
+If DNS resolution fails or the route check cannot be performed, the destination is assumed to be remote and bandwidth limiting is applied.
+
+\section{Progress Monitoring}
+
+The copy engine monitors \code{rsync} output in real time by parsing the progress line format:
+
+\begin{lstlisting}
+<bytes_transferred> <percent>% <speed> <time_remaining>
+\end{lstlisting}
+
+The following progress metrics are extracted:
+\begin{itemize}
+    \item \textbf{Bytes Transferred}: Total bytes written to the destination
+    \item \textbf{Progress}: Percentage complete (e.g., ``42\%'')
+    \item \textbf{Speed}: Current transfer rate (e.g., ``12.34MB/s'')
+    \item \textbf{Time Remaining}: Estimated time to completion (e.g., ``01:23:45'')
+\end{itemize}
+
+These values are available via the per-\DR{} \mibentry{ACTIVE\_\{property\}\_DR\{n\}} MIB entries (Section~\ref{sec:mib-entries}).
+
+\section{Delete Operations}
+
+Delete operations use \code{rm -f} rather than \code{rsync}:
+
+\begin{lstlisting}
+ssh -t -t mcsdr@<DR> 'shopt -s huponexit && sudo rm -f <path>'
+\end{lstlisting}
+
+For locally originating deletes:
+\begin{lstlisting}
+rm -f <path>
+\end{lstlisting}
+
+\section{Copy Lifecycle}
+
+The lifecycle of a copy operation is:
+
+\begin{enumerate}
+    \item \textbf{Creation}: An \code{InterruptibleCopy} instance is created with the source, destination, ID, retry count, and last try timestamp
+    \item \textbf{Retry Check}: If the last attempt was less than \code{wait\_retry} hours ago (default: 24), the copy sets its status to ``error: too soon to retry'' and does not start
+    \item \textbf{Start}: The \code{rsync} process is launched in a background thread
+    \item \textbf{Monitoring}: The main thread polls \code{rsync} stdout/stderr for progress updates
+    \item \textbf{Completion}: When \code{rsync} exits:
+    \begin{itemize}
+        \item Return code 0: status set to ``complete''
+        \item Return code $<$ 0 (killed by signal): status set to ``paused''
+        \item Return code $>$ 0: status set to ``error: \textit{stderr output}'', and any rsync error messages from stdout are prepended
+    \end{itemize}
+    \item \textbf{Post-Processing}: The queue manager handles the result (log completion, schedule retry, or record failure)
+\end{enumerate}

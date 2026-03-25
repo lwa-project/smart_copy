@@ -8,7 +8,7 @@ import math
 import time
 import socket
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 
 import netifaces
 
@@ -45,7 +45,7 @@ def getTime():
     """
     
     # determine current time
-    dt = datetime.utcnow()
+    dt = datetime.now(tz=timezone.utc)
     year        = dt.year             
     month       = dt.month      
     day         = dt.day    
@@ -104,7 +104,7 @@ def parsePayload(payload):
     dataLen = int(payload[18:22], 10)
     cmdStatus = payload[38]
     subStatus = payload[39:46]
-    data      = payload[46:46+dataLen-7]
+    data      = payload[46:46+dataLen-8]
     
     return cmdStatus, subStatus, data
 

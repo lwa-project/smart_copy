@@ -9,11 +9,11 @@ import time
 import socket
 import argparse
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 
 import netifaces
 
-from lsl.common import mcs, metabundle, metabundleADP
+from lsl.common import mcs, metabundle
 
 #
 # Site Name and default path
@@ -54,24 +54,17 @@ def parseMetadata(tarname):
      * originally requested UCF copy path or None if there was none
     """
     
-    try:
-        parser = metabundle
-        parser.get_session_spec(tarname)
-    except Exception as e:
-        parser = metabundleADP
-        parser.get_session_spec(tarname)
-            
-    project = parser.get_sdf(tarname)
+    project = metabundle.get_sdf(tarname)
     project_id = project.id
     isSpec = False
-    if project.sessions[0].observations[0].mode not in ('TBW', 'TBN'):
-        if project.sessions[0].spcSetup[0] != 0 and project.sessions[0].spcSetup[1] != 0:
+    if project.sessions[0].observations[0].mode not in ('TBT', 'TBS'):
+        if project.sessions[0].spc_setup[0] != 0 and project.sessions[0].spc_setup[1] != 0:
             isSpec = True
             
-    meta = parser.get_session_metadata(tarname)
+    meta = metabundle.get_session_metadata(tarname)
     tags = [meta[id]['tag'] for id in sorted(meta.keys())]
     barcodes = [meta[id]['barcode'] for id in sorted(meta.keys())]
-    meta = parser.get_session_spec(tarname)
+    meta = metabundle.get_session_spec(tarname)
     beam = meta['drx_beam']
     date = mcs.mjdmpm_to_datetime(int(meta['mjd']), int(meta['mpm']))
     datestr = date.strftime("%y%m%d")
@@ -129,7 +122,7 @@ def get_time():
     """
     
     # determine current time
-    dt = datetime.utcnow()
+    dt = datetime.now(tz=timezone.utc)
     year        = dt.year             
     month       = dt.month      
     day         = dt.day    
@@ -188,7 +181,7 @@ def parsePayload(payload):
     dataLen = int(payload[18:22], 10)
     cmdStatus = payload[38]
     subStatus = payload[39:46]
-    data      = payload[46:46+dataLen-7]
+    data      = payload[46:46+dataLen-8]
     
     return cmdStatus, subStatus, data
 

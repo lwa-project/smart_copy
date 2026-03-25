@@ -1,0 +1,131 @@
+% 08-references.tex - References
+
+\chapter{References}
+\label{sec:references}
+
+\section{Related Documents}
+\begin{enumerate}
+    \item MCS Common ICD --- Monitor and Control System Interface Control Document
+    \item DR ICD --- Data Recorder Interface Control Document
+    \item HAL ICD --- Heuristic Automation for LWA Interface Control Document
+\end{enumerate}
+
+\section{Software Repository}
+
+The \SC{} source code is maintained in a Git repository. The primary modules are listed in Table~\ref{tab:source-files}. For detailed usage instructions for the user-facing scripts, see \file{Documentation/SmartCopy\_Scripts.md} in the repository.
+
+\begin{table}[htbp]
+    \centering
+    \caption{SmartCopy Source Files}
+    \label{tab:source-files}
+    \begin{tabular}{lp{8cm}}
+        \toprule
+        \textbf{File} & \textbf{Description} \\
+        \midrule
+        \file{smart\_cmnd.py} & Main command handler and UDP communication \\
+        \file{smartFunctions.py} & SmartCopy class and system control logic \\
+        \file{smartThreads.py} & Station monitoring and per-DR queue processing threads \\
+        \file{smartCommon.py} & Queue, copy engine, and utility classes \\
+        \file{MCS.py} & MCS UDP protocol implementation and reference server \\
+        \file{smartCopy.py} & CLI client for submitting copy commands \\
+        \file{smartDelete.py} & CLI client for submitting delete commands \\
+        \file{smartQuery.py} & CLI client for querying system status \\
+        \file{smartCopyPause.py} & CLI client for pausing queues \\
+        \file{smartCopyResume.py} & CLI client for resuming queues \\
+        \file{smartCopyHelper.py} & Copy helper with LSL metadata parsing \\
+        \file{smartCopyLeo.py} & LEO-specific copy helper \\
+        \file{smartDeleteHelper.py} & Delete helper with DRSU barcode resolution \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Configuration Files}
+
+\SC{} configuration is stored in JSON format in the \file{defaults.json} file. Credentials and sensitive values use \code{lwa\_auth} references (prefixed with \code{!LWA\_AUTH}) that are resolved at runtime.
+
+Key configuration parameters include:
+
+\begin{itemize}
+    \item \code{mcs}: Communication settings
+    \begin{itemize}
+        \item \code{message\_in\_port}: Incoming command port (default: 5050)
+        \item \code{message\_out\_port}: Outgoing response port (default: 5051)
+        \item \code{message\_ref\_port}: \O{}MQ reference server port (default: 5052)
+    \end{itemize}
+    \item \code{bw\_limit}: Remote copy bandwidth limit in MB/s (default: 0.0, disabled)
+    \item \code{max\_retry}: Maximum retry attempts before giving up (default: 7)
+    \item \code{wait\_retry}: Time in hours to wait between retries (default: 24)
+    \item \code{purge\_size}: Data accumulation threshold in TB before source deletion (default: 1.0)
+    \item \code{email}: Email notification settings
+    \begin{itemize}
+        \item \code{username}: SMTP authentication username (resolved via \code{lwa\_auth})
+        \item \code{password}: SMTP authentication password (resolved via \code{lwa\_auth})
+        \item \code{smtp\_server}: SMTP server address (resolved via \code{lwa\_auth})
+    \end{itemize}
+\end{itemize}
+
+\section{Dependencies}
+
+\SC{} depends on the external packages listed in Table~\ref{tab:dependencies}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Software Dependencies}
+    \label{tab:dependencies}
+    \begin{tabular}{lp{8cm}}
+        \toprule
+        \textbf{Package} & \textbf{Description} \\
+        \midrule
+        \code{json\_minify} & JSON parsing with comment support \\
+        \code{lsl} & LWA Software Library (metadata, SDF handling) \\
+        \code{lwa\_auth} & Credential resolution and configuration loading \\
+        \code{netifaces} & Network interface detection for server address \\
+        \code{zmq} & \O{}MQ messaging for reference server \\
+        \code{git} (GitPython) & Git repository introspection for version tracking \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Additionally, \SC{} uses the following standard library modules:
+\begin{itemize}
+    \item \code{sqlite3} --- Persistent queue storage
+    \item \code{smtplib} / \code{email} --- Error notification emails
+    \item \code{subprocess} --- \code{rsync} and SSH process management
+    \item \code{threading} --- Concurrent queue processing
+\end{itemize}
+
+\section{External Tools}
+
+\SC{} requires the system-level tools listed in Table~\ref{tab:system-tools}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Required System Tools}
+    \label{tab:system-tools}
+    \begin{tabular}{lp{8cm}}
+        \toprule
+        \textbf{Tool} & \textbf{Usage} \\
+        \midrule
+        \code{rsync} & File transfer engine (local and remote copies) \\
+        \code{ssh} & Remote command execution on DRs (user: \code{mcsdr}) \\
+        \code{tail} & MCS log file monitoring (\code{tail -F}) \\
+        \code{du} & File size determination on DRs \\
+        \code{rm} & Source file deletion during purge \\
+        \code{truncate} & Destination file truncation before resuming copies \\
+        \code{ip} & Gateway detection for bandwidth limiting (\code{ip route get}) \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Service Deployment}
+
+\SC{} is deployed as a \code{systemd} service (\file{smart-copy.service}). The service:
+
+\begin{itemize}
+    \item Runs as the \code{op1} user
+    \item Logs to syslog and a runtime log file
+    \item Working directory: \file{/home/op1/SmartCopy/}
+    \item Rotates old logs on startup
+    \item Executes: \code{python3 ./smart\_cmnd.py --config defaults.json --debug --log runtime.log}
+    \item Starts after MCS services
+\end{itemize}

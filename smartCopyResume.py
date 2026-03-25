@@ -5,8 +5,9 @@ import math
 import time
 import socket
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 
+import zmq
 import netifaces
 
 #
@@ -42,7 +43,7 @@ def getTime():
     """
     
     # determine current time
-    dt = datetime.utcnow()
+    dt = datetime.now(tz=timezone.utc)
     year        = dt.year             
     month       = dt.month      
     day         = dt.day    
@@ -67,8 +68,15 @@ def getTime():
     return (mjd, mpm)
 
 
-def buildPayload(source, cmd, data=None):
-    ref = 1
+def buildPayload(source, cmd, data=None, refSocket=None):
+    if refSocket is None:
+        ref = 1
+    else:
+        try:
+            refSocket.send(b"next_ref")
+            ref = int(refSocket.recv(), 10)
+        except zmq.ZMQError as e:
+            raise RuntimeError("Cannot access reference ID server: %s" % str(e))
     
     mjd, mpm = getTime()
     
@@ -94,7 +102,7 @@ def parsePayload(payload):
     dataLen = int(payload[18:22], 10)
     cmdStatus = payload[38]
     subStatus = payload[39:46]
-    data      = payload[46:46+dataLen-7]
+    data      = payload[46:46+dataLen-8]
     
     return cmdStatus, subStatus, data
 
@@ -113,12 +121,17 @@ def main(args):
     inPort = 5051
     refPort = 5052
     
+    context = zmq.Context()
+    sockRef = context.socket(zmq.REQ)
+    sockRef.connect("tcp://%s:%i" % (outHost, refPort))
+    sockRef.setsockopt(zmq.RCVTIMEO, 5000)
+
     cmds = []
     nDR = 5
     for i in range(1, nDR+1):
         dr = 'DR%i' % i
         if args.all or dr in args.DR:
-            cmds.append( buildPayload(inHost, "RES", data=dr) )
+            cmds.append( buildPayload(inHost, "RES", data=dr, refSocket=sockRef) )
             
     try:
         sockOut = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -144,6 +157,7 @@ def main(args):
                     
         sockIn.close()
         sockOut.close()
+        sockRef.close()
     except socket.error as e:
         raise RuntimeError(str(e))
 

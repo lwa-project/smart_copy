@@ -1,0 +1,41 @@
+% SmartCopy_ICD.tex - Main document for SmartCopy Interface Control Document
+%
+% SmartCopy Interface Control Document
+% Version A - February 2026
+%
+% Long Wavelength Array Project
+% University of New Mexico
+
+\documentclass{lwa-icd}
+
+% Project-specific configuration
+\input{config/packages}
+\input{config/macros}
+\input{config/metadata}
+
+\begin{document}
+
+% Title page
+\makeICDtitlepage
+
+% Revision history
+\input{frontmatter/revisions}
+
+% Table of contents
+\makeICDtoc
+
+% Main content sections
+\input{sections/01-description}
+\input{sections/02-abbreviations}
+\input{sections/03-monitor-control}
+\input{sections/04-queue-management}
+\input{sections/05-copy-engine}
+\input{sections/06-station-monitoring}
+\input{sections/07-status-error}
+\input{sections/08-references}
+
+% Appendices
+\appendix
+\input{appendices/appendix-a}
+
+\end{document}

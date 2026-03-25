@@ -14,7 +14,7 @@ import traceback
 import subprocess
 import logging
 from io import StringIO
-from datetime import datetime
+from datetime import datetime, timezone
 
 import smtplib
 from email.mime.text import MIMEText
@@ -466,7 +466,7 @@ class ManageDR(object):
                                         
                                 ### If we've made it this far we have a copy that is ready to go.  
                                 ### Start it up.
-                                self.active = InterruptibleCopy(*task, bw_limit=bw_limit)
+                                self.active = InterruptibleCopy(*task, bw_limit=bw_limit, wait_retry=self.config['wait_retry'])
                                 self.results[self.active.id] = 'active/started for %s:%s -> %s:%s' % (task[0], task[1], task[2], task[3])
                                 
                             else:
@@ -702,7 +702,7 @@ class ManageDR(object):
             
             ### The report
             msg = MIMEText(report)
-            msg['Subject'] = '%s - Recent SmartCopy Failures for %s - %s' % (SITE.upper(), self.dr, datetime.utcnow().strftime("%Y/%m/%d"),)
+            #msg['Subject'] = '%s - Recent SmartCopy Failures for %s - %s' % (SITE.upper(), self.dr, datetime.now(tz=timezone.utc).strftime("%Y/%m/%d"),)
             msg['From'] = self.config['email']['username']
             msg['To'] = ','.join(to)
             if cc is not None:
