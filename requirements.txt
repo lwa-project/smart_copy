@@ -1,5 +1,5 @@
 json_minify
-lsl
+lsl < 4
 lwa_auth
 sqlite3
 netifaces
