@@ -7,6 +7,9 @@ Wants=network-online.target
 # Run as the specified user
 User=op1
 
+# Restart the process if it dies
+Restart=on-failure
+
 # Logging
 StandardOutput=syslog
 StandardError=syslog
